@@ -1,0 +1,32 @@
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install pre-commit==3.7.1
+      - run: pre-commit run --all-files
+
+  dockerfile-pin-check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject unpinned base images
+        run: |
+          set -e
+          # Every FROM must include @sha256:<digest> or use a build arg digest.
+          OFFENDERS=$(grep -rE "^FROM [^@$]+:[^@]+\s*$" docker/ || true)
+          if [ -n "$OFFENDERS" ]; then
+            echo "::error::Unpinned FROM detected (ADR 0007):"
+            echo "$OFFENDERS"
+            exit 1
+          fi

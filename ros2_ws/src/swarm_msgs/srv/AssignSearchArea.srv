@@ -1,0 +1,8 @@
+geometry_msgs/Polygon polygon
+float32 altitude_m
+float32 swath_width_m
+float32 overlap_fraction
+---
+bool success
+string message
+uint32 estimated_duration_s

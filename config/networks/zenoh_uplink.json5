@@ -1,0 +1,31 @@
+// Zenoh router config on the leader (ADR 0004).
+// Curated topic allowlist for drone-to-GCS WAN forwarding.
+{
+  mode: "router",
+  listen: {
+    endpoints: ["tcp/0.0.0.0:7447"],
+  },
+  plugins: {
+    ros2dds: {
+      domain: 42,
+      allow: {
+        publishers: [
+          "/swarm/.*",
+          "/drone_[0-4]/mavros/state",
+          "/drone_[0-4]/mavros/global_position/global",
+          "/drone_[0-4]/mavros/battery",
+          "/drone_[0-4]/perception/detections",
+          "/drone_[0-4]/camera/thumbnail/compressed",
+          "/drone_0/octomap_diff",
+          "/diagnostics",
+        ],
+        subscribers: [
+          "/swarm/command",
+          "/gcs/active_stream",
+        ],
+      },
+      // Selective high-res video: only the operator-selected drone publishes.
+      // bandwidth_manager_node on each drone gates the republisher.
+    },
+  },
+}

@@ -1,0 +1,10 @@
+uint8 drone_id
+geometry_msgs/Polygon polygon
+float32 altitude_m
+float32 swath_width_m
+---
+bool success
+uint32 detections_found
+---
+float32 progress
+geometry_msgs/PointStamped current_target

@@ -1,0 +1,24 @@
+# Pretrained model registry — pinned per ADR 0007.
+# Weights live in Git LFS. SHA256 here is the ground truth; LFS object must match.
+
+models:
+  yolov8n:
+    family: ultralytics-yolov8
+    role: follower-detection
+    source: https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt
+    path: ros2_ws/src/swarm_perception/models/yolov8n.pt
+    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    classes_used: ["person"]
+    input_size: 640
+
+  yolov8s:
+    family: ultralytics-yolov8
+    role: leader-detection
+    source: https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8s.pt
+    path: ros2_ws/src/swarm_perception/models/yolov8s.pt
+    sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    classes_used: ["person"]
+    input_size: 640
+
+# TensorRT engines are built per-Jetson at first boot — not version-controlled.
+# Build cache lives at /var/lib/orynth/models/<jetson-id>/<model>.engine

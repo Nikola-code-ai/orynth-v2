@@ -1,0 +1,12 @@
+string mission_id
+geometry_msgs/Polygon search_polygon
+float32 altitude_m
+string formation
+---
+bool success
+uint32 detections_found
+float32 area_covered_m2
+---
+string phase
+float32 progress
+uint32 detections_so_far

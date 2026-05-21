@@ -1,0 +1,52 @@
+# Phase 1 single-drone dev stack: SITL + MAVROS + Foxglove bridge.
+name: orynth-dev
+
+services:
+  sitl:
+    build:
+      context: ..
+      dockerfile: docker/sitl.Dockerfile
+    image: orynth-sitl:dev
+    container_name: orynth-sitl
+    ports:
+      - "5760:5760/tcp"   # ArduPilot SITL master TCP
+      - "14550:14550/udp" # MAVLink UDP out
+    command: >
+      arducopter --model=quad --speedup=1
+        --serial0=tcp:0:wait
+        --instance=0
+    networks: [swarm-lan]
+
+  mavros:
+    image: orynth-base:dev
+    build:
+      context: ..
+      dockerfile: docker/base.Dockerfile
+    container_name: orynth-mavros
+    depends_on: [sitl]
+    command: >
+      ros2 launch mavros apm.launch
+        fcu_url:=tcp://sitl:5760@
+        tgt_system:=1
+        tgt_component:=1
+    networks: [swarm-lan]
+    environment:
+      - ROS_DOMAIN_ID=42
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+  foxglove:
+    image: orynth-base:dev
+    container_name: orynth-foxglove
+    depends_on: [mavros]
+    ports:
+      - "8765:8765" # Foxglove WebSocket
+    command: >
+      ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765
+    networks: [swarm-lan]
+    environment:
+      - ROS_DOMAIN_ID=42
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+networks:
+  swarm-lan:
+    driver: bridge

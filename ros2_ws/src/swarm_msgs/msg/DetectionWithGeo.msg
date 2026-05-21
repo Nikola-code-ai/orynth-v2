@@ -1,0 +1,8 @@
+std_msgs/Header header
+uint8 drone_id
+string class_label
+float32 confidence
+sensor_msgs/RegionOfInterest bbox
+geometry_msgs/PointStamped world_position
+float32 geolocation_uncertainty_m
+uint32 image_seq

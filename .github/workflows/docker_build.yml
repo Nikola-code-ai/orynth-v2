@@ -1,0 +1,23 @@
+name: docker_build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docker/**"
+      - ".github/workflows/docker_build.yml"
+  workflow_dispatch:
+
+jobs:
+  build-multi-arch:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build base for amd64 + arm64
+        run: |
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            -f docker/base.Dockerfile \
+            -t orynth-base:${GITHUB_SHA::8} .

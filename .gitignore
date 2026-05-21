@@ -1,0 +1,33 @@
+build/
+install/
+log/
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+*.swp
+*.swo
+.DS_Store
+
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# Local SITL artefacts
+sitl/
+logs/
+*.tlog
+*.bin
+*.BIN
+
+# Local Docker overrides
+docker/compose.override.yaml
+
+# Acceptance recordings — large, archive externally
+accept/*.mcap
+accept/*.bag

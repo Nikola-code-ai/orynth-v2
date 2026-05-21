@@ -1,0 +1,43 @@
+name: sitl_smoke
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 4 * * *"  # nightly UTC
+
+jobs:
+  sitl-single-drone:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build base + sitl images
+        run: |
+          docker buildx build --load -f docker/base.Dockerfile -t orynth-base:ci .
+          docker buildx build --load -f docker/sitl.Dockerfile \
+            --build-arg BASE_TAG=orynth-base:ci -t orynth-sitl:ci .
+
+      - name: Phase 1 smoke — arm, takeoff, waypoint, land
+        run: |
+          bash scripts/ci/run_sitl_smoke.sh
+
+  sitl-5-drone-swarm:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build images
+        run: |
+          docker buildx build --load -f docker/base.Dockerfile -t orynth-base:ci .
+          docker buildx build --load -f docker/sitl.Dockerfile \
+            --build-arg BASE_TAG=orynth-base:ci -t orynth-sitl:ci .
+      - name: Phase 2 nightly — 5-drone diamond formation
+        run: |
+          docker compose -f docker/compose.swarm.yaml up --abort-on-container-exit

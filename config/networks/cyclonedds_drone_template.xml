@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Cyclone DDS configuration template (ADR 0004).
+  Copy to cyclonedds_drone_<N>.xml and fill in {{DRONE_N}} + peer IPs.
+  WiFi APs typically drop multicast → discovery uses explicit peer list.
+-->
+<CycloneDDS xmlns="https://cdds.io/config" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+  <Domain id="any">
+    <General>
+      <NetworkInterfaceAddress>wlan0</NetworkInterfaceAddress>
+      <AllowMulticast>spdp</AllowMulticast>
+      <EnableMulticastLoopback>true</EnableMulticastLoopback>
+      <MaxMessageSize>65500B</MaxMessageSize>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <Peers>
+        <!-- Replace with actual swarm IPs -->
+        <Peer address="192.168.42.10"/>  <!-- drone_0 (leader) -->
+        <Peer address="192.168.42.11"/>  <!-- drone_1 -->
+        <Peer address="192.168.42.12"/>  <!-- drone_2 -->
+        <Peer address="192.168.42.13"/>  <!-- drone_3 -->
+        <Peer address="192.168.42.14"/>  <!-- drone_4 -->
+        <Peer address="192.168.42.1"/>   <!-- gcs -->
+      </Peers>
+    </Discovery>
+    <Internal>
+      <Watermarks>
+        <WhcHigh>500kB</WhcHigh>
+      </Watermarks>
+    </Internal>
+  </Domain>
+</CycloneDDS>

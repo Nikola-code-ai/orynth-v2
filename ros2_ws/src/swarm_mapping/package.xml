@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>swarm_mapping</name>
+  <version>0.1.0</version>
+  <description>FAST-LIO2 launch (leader), RTAB-Map launch (followers), OctoMap server, map_merge. See ADR 0005.</description>
+  <maintainer email="nikolamarkovic.idea@gmail.com">Nikola Markovic</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>ros2launch</exec_depend>
+  <exec_depend>octomap_server</exec_depend>
+  <exec_depend>rtabmap_ros</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

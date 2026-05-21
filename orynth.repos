@@ -1,0 +1,41 @@
+# vcstool repos file — every external source pinned by git SHA per ADR 0007.
+# Use: `vcs import ros2_ws/src < orynth.repos`
+# Refresh SHAs via scripts/build/refresh_pins.sh.
+
+repositories:
+  ardupilot:
+    type: git
+    url: https://github.com/ArduPilot/ardupilot.git
+    version: 0000000000000000000000000000000000000000  # tag: Copter-4.5.7
+  ardupilot_gz:
+    type: git
+    url: https://github.com/ArduPilot/ardupilot_gz.git
+    version: 0000000000000000000000000000000000000000
+  ardupilot_gazebo:
+    type: git
+    url: https://github.com/ArduPilot/ardupilot_gazebo.git
+    version: 0000000000000000000000000000000000000000
+  fast_lio:
+    type: git
+    url: https://github.com/hku-mars/FAST_LIO.git
+    version: 0000000000000000000000000000000000000000
+  octomap_ros:
+    type: git
+    url: https://github.com/OctoMap/octomap_ros.git
+    version: 0000000000000000000000000000000000000000
+  zenoh_ros2dds:
+    type: git
+    url: https://github.com/eclipse-zenoh/zenoh-plugin-ros2dds.git
+    version: 0000000000000000000000000000000000000000
+  isaac_ros_object_detection:
+    type: git
+    url: https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_object_detection.git
+    version: 0000000000000000000000000000000000000000
+  rtabmap_ros:
+    type: git
+    url: https://github.com/introlab/rtabmap_ros.git
+    version: 0000000000000000000000000000000000000000
+  ego_planner_v2:
+    type: git
+    url: https://github.com/ZJU-FAST-Lab/ego-planner-v2.git
+    version: 0000000000000000000000000000000000000000
