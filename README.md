@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/banner.png" alt="Orynth — Reaching you when the world cannot." />
+</p>
+
 # Orynth v2
 
 5-drone search-and-rescue swarm. ArduPilot flight controllers, Jetson Orin Nano companions, ROS 2 Humble, YOLOv8 human detection, LiDAR mapping on leader, outdoor mission profile.
