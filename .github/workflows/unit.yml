@@ -8,37 +8,25 @@ on:
 jobs:
   colcon-test:
     runs-on: ubuntu-22.04
-    container:
-      image: ros:humble-ros-base-jammy
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install rosdep deps
-        shell: bash
-        run: |
-          set -e
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            python3-colcon-common-extensions python3-rosdep python3-pytest python3-pytest-cov
-          if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
-            rosdep init
-          fi
-          rosdep update
-          cd ros2_ws
-          rosdep install --from-paths src --ignore-src -y \
-            --skip-keys "behaviortree_cpp octomap_server rtabmap_ros foxglove_bridge"
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: colcon build
-        shell: bash
-        run: |
-          source /opt/ros/humble/setup.bash
-          cd ros2_ws
-          colcon build --packages-skip swarm_hardware
+      # Build + test inside the orynth base image so unit CI runs in the exact
+      # environment Phase 1+ uses. Avoids rosdep/skip-keys drift against a plain
+      # ros base, and exercises base.Dockerfile on every PR.
+      - name: Build base image
+        run: docker buildx build --load -f docker/base.Dockerfile -t orynth-base:ci .
 
-      - name: colcon test
-        shell: bash
+      - name: colcon build + test
         run: |
-          source /opt/ros/humble/setup.bash
-          cd ros2_ws
-          colcon test --packages-skip swarm_hardware --return-code-on-test-failure
-          colcon test-result --verbose
+          docker run --rm -v "$PWD":/workspace -w /workspace/ros2_ws orynth-base:ci \
+            bash -c '
+              set -e
+              colcon build --packages-skip swarm_hardware
+              colcon test --packages-skip swarm_hardware --return-code-on-test-failure
+              colcon test-result --verbose
+            '

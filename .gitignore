@@ -1,6 +1,7 @@
-build/
-install/
-log/
+# Anchored to repo root — a bare "build/" also swallows scripts/build/.
+/build/
+/install/
+/log/
 .vscode/
 .idea/
 __pycache__/

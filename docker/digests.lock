@@ -1,6 +1,6 @@
 # Base image digests pinned per ADR 0007.
 # Refresh via scripts/build/refresh_pins.sh. Quarterly cadence.
-# Placeholders — replace before first CI run.
+# Resolved 2026-05-21.
 
-ros:humble-ros-base-jammy = sha256:0000000000000000000000000000000000000000000000000000000000000000
-nvcr.io/nvidia/l4t-jetpack:r36.3.0 = sha256:0000000000000000000000000000000000000000000000000000000000000000
+ros:humble-ros-base-jammy = sha256:5417e56962ff6e15d4cf9b2f78a71a78f3901f47cd78696b575b7eecdb54eb78
+nvcr.io/nvidia/l4t-jetpack:r36.3.0 = sha256:b3bbd7e3f3a0879a6672adc64aef7742ba12f9baaf1451c91215942c46e4e2fa

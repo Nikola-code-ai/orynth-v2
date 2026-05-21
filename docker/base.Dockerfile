@@ -3,11 +3,11 @@
 # Multi-arch (linux/amd64 + linux/arm64).
 #
 # Per ADR 0007: base image is pinned by SHA256 digest, not by tag.
-# The digests below are placeholders — populate via scripts/build/refresh_pins.sh
-# before the first CI run. CI guard rejects unpinned FROMs.
+# Digests mirror docker/digests.lock — refresh both via scripts/build/refresh_pins.sh.
+# CI guard rejects unpinned FROMs.
 
-ARG ROS_BASE_DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000
-ARG JETPACK_DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000
+ARG ROS_BASE_DIGEST=sha256:5417e56962ff6e15d4cf9b2f78a71a78f3901f47cd78696b575b7eecdb54eb78
+ARG JETPACK_DIGEST=sha256:b3bbd7e3f3a0879a6672adc64aef7742ba12f9baaf1451c91215942c46e4e2fa
 
 FROM ros:humble-ros-base-jammy@${ROS_BASE_DIGEST} AS base-amd64
 FROM nvcr.io/nvidia/l4t-jetpack:r36.3.0@${JETPACK_DIGEST} AS base-arm64
@@ -42,9 +42,14 @@ RUN if [ ! -f /opt/ros/${ROS_DISTRO}/setup.bash ]; then \
       rm -rf /var/lib/apt/lists/*; \
     fi
 
-# Common ROS 2 + dev tooling, pinned by version per ADR 0007.
-# Versions below are quarterly snapshots — refresh via refresh_pins.sh.
+# Common ROS 2 + dev tooling.
+# NOTE: apt packages are not version-pinned here — see WORKFLOW.md "Known
+# deviations". Non-fragile apt pinning needs a ROS snapshot mirror; deferred.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3-colcon-common-extensions \
+      python3-rosdep \
+      python3-vcstool \
+      python3-pip \
       ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
       ros-${ROS_DISTRO}-mavros \
       ros-${ROS_DISTRO}-mavros-msgs \
@@ -70,8 +75,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # MAVROS GeographicLib datasets (required for global<->local conversions).
 RUN /opt/ros/${ROS_DISTRO}/lib/mavros/install_geographiclib_datasets.sh
 
-# Python deps — hashes enforced.
-COPY requirements.txt /tmp/requirements.txt
+# Python deps — hashes enforced. Build context is the repo root.
+COPY docker/requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir --require-hashes -r /tmp/requirements.txt
 
 # Workspace mount point.

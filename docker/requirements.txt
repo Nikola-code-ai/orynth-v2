@@ -1,14 +1,15 @@
 # Per ADR 0007: every Python dependency pinned with version + hash.
-# Populate hashes via `pip-compile --generate-hashes` in scripts/build/refresh_pins.sh.
-# Placeholders below — CI will reject empty hashes.
+# Refresh via scripts/build/refresh_pins.sh. Resolved 2026-05-21.
+#
+# Phase 0-2 scope only. Kept to pure-Python wheels so a single hash set
+# satisfies --require-hashes on both amd64 and arm64.
+# YOLO/Torch deps (ultralytics, numpy, opencv) land in a Phase 3 requirements
+# bump — they pull arch-specific wheels and a large transitive closure, so
+# they are deliberately out of the base image. See WORKFLOW.md.
 
-ultralytics==8.2.0 \
-    --hash=sha256:0000000000000000000000000000000000000000000000000000000000000000
-pymavlink==2.4.41 \
-    --hash=sha256:0000000000000000000000000000000000000000000000000000000000000000
-numpy==1.26.4 \
-    --hash=sha256:0000000000000000000000000000000000000000000000000000000000000000
-opencv-python-headless==4.10.0.84 \
-    --hash=sha256:0000000000000000000000000000000000000000000000000000000000000000
 pexpect==4.9.0 \
-    --hash=sha256:0000000000000000000000000000000000000000000000000000000000000000
+    --hash=sha256:7236d1e080e4936be2dc3e326cec0af72acf9212a7e1d060210e70a47e253523 \
+    --hash=sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f
+ptyprocess==0.7.0 \
+    --hash=sha256:4b41f3967fce3af57cc7e94b888626c18bf37a083e3651ca8feeb66d492fef35 \
+    --hash=sha256:5c5d0a3b48ceee0b48485e0c26037c0acd7d29765ca3fbb5cb3831d347423220

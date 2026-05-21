@@ -3,7 +3,7 @@
   <name>swarm_perception</name>
   <version>0.1.0</version>
   <description>YOLO human detection + geolocation pipeline. Ships from Phase 0 with a passthrough detector; Phase 3 swaps in YOLOv8 + Isaac ROS.</description>
-  <maintainer email="nikolamarkovic.idea@gmail.com">Nikola Markovic</maintainer>
+  <maintainer email="dev.markovic@protonmail.com">Nikola Markovic</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_python</buildtool_depend>

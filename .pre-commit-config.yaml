@@ -7,6 +7,7 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
         args: ["--maxkb=1024"]
+        exclude: ^docs/assets/
       - id: check-merge-conflict
       - id: mixed-line-ending
 

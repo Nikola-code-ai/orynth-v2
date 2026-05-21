@@ -3,7 +3,7 @@
   <name>swarm_behaviors</name>
   <version>0.1.0</version>
   <description>BehaviorTree.CPP plugins + XML trees orchestrating swarm missions.</description>
-  <maintainer email="nikolamarkovic.idea@gmail.com">Nikola Markovic</maintainer>
+  <maintainer email="dev.markovic@protonmail.com">Nikola Markovic</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

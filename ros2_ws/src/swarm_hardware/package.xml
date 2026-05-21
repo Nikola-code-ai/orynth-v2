@@ -3,7 +3,7 @@
   <name>swarm_hardware</name>
   <version>0.1.0</version>
   <description>Jetson runtime bringup, udev rules, MAVROS serial configs. arm64-only build (skipped on amd64 CI/dev).</description>
-  <maintainer email="nikolamarkovic.idea@gmail.com">Nikola Markovic</maintainer>
+  <maintainer email="dev.markovic@protonmail.com">Nikola Markovic</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

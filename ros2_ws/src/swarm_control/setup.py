@@ -13,13 +13,10 @@ setup(
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="Nikola Markovic",
-    maintainer_email="nikolamarkovic.idea@gmail.com",
+    maintainer_email="dev.markovic@protonmail.com",
     description="Backend-neutral swarm control.",
     license="Apache-2.0",
     tests_require=["pytest"],
-    entry_points={
-        "console_scripts": [
-            "swarm_server = swarm_control.swarm_server_node:main",
-        ],
-    },
+    # Phase 0 scaffold — no nodes yet. swarm_server lands in Phase 2.
+    entry_points={"console_scripts": []},
 )

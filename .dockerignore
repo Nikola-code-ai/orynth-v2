@@ -1,0 +1,27 @@
+# Keep the Docker build context small. The base image only needs docker/ and
+# (later phases) ros2_ws/. Everything below is irrelevant to image builds.
+.git
+.github
+docs
+accept
+*.md
+!ros2_ws/**/*.md
+
+# Build artefacts
+build/
+install/
+log/
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local SITL / logs
+sitl/
+logs/
+*.tlog
+*.bin
+*.BIN
+*.mcap

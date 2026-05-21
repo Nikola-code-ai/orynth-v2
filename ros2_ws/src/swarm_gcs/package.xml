@@ -3,7 +3,7 @@
   <name>swarm_gcs</name>
   <version>0.1.0</version>
   <description>Foxglove bridge bringup, bandwidth manager, telemetry aggregator, swarm markers. QGC is a separate process, not packaged.</description>
-  <maintainer email="nikolamarkovic.idea@gmail.com">Nikola Markovic</maintainer>
+  <maintainer email="dev.markovic@protonmail.com">Nikola Markovic</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_python</buildtool_depend>

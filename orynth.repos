@@ -1,41 +1,47 @@
 # vcstool repos file — every external source pinned by git SHA per ADR 0007.
 # Use: `vcs import ros2_ws/src < orynth.repos`
 # Refresh SHAs via scripts/build/refresh_pins.sh.
+#
+# SHAs resolved 2026-05-21. These are forward pins: most repos are not imported
+# until the phase that needs them (ardupilot* Phase 1-2, fast_lio/octomap
+# Phase 4, rtabmap Phase 5, isaac_ros Phase 3, zenoh Phase 5, ego_planner
+# Phase 6). Phase 0 builds the first-party workspace only and does NOT import
+# these. Re-pin to the phase's validated ref when that phase starts.
 
 repositories:
   ardupilot:
     type: git
     url: https://github.com/ArduPilot/ardupilot.git
-    version: 0000000000000000000000000000000000000000  # tag: Copter-4.5.7
+    version: 2a3dc4b7bf2507120f7378a7b2fde73185e0c325  # tag Copter-4.5.7
   ardupilot_gz:
     type: git
     url: https://github.com/ArduPilot/ardupilot_gz.git
-    version: 0000000000000000000000000000000000000000
+    version: 8df4dc1726e37504e6fc8b952d02e554cfa3176f  # main @ 2026-05-21
   ardupilot_gazebo:
     type: git
     url: https://github.com/ArduPilot/ardupilot_gazebo.git
-    version: 0000000000000000000000000000000000000000
+    version: 082a0fe231f6e63bc8d1598f1cba461d9e2ea7f5  # main @ 2026-05-21
   fast_lio:
     type: git
     url: https://github.com/hku-mars/FAST_LIO.git
-    version: 0000000000000000000000000000000000000000
+    version: 7cc4175de6f8ba2edf34bab02a42195b141027e9  # default branch @ 2026-05-21
   octomap_ros:
     type: git
     url: https://github.com/OctoMap/octomap_ros.git
-    version: 0000000000000000000000000000000000000000
+    version: 8816e50bf00411c41b7891842effd41bfbc2e2df  # default branch @ 2026-05-21
   zenoh_ros2dds:
     type: git
     url: https://github.com/eclipse-zenoh/zenoh-plugin-ros2dds.git
-    version: 0000000000000000000000000000000000000000
+    version: 31f1266d163d91d54a7e5c1fd26b34de386472df  # main @ 2026-05-21
   isaac_ros_object_detection:
     type: git
     url: https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_object_detection.git
-    version: 0000000000000000000000000000000000000000
+    version: dbbb2505dcf1088f4d93a73adcee109d3686d092  # default branch @ 2026-05-21
   rtabmap_ros:
     type: git
     url: https://github.com/introlab/rtabmap_ros.git
-    version: 0000000000000000000000000000000000000000
+    version: aec4f91f6150e82572bae1a5378fd9e5be924ca0  # default branch @ 2026-05-21
   ego_planner_v2:
     type: git
     url: https://github.com/ZJU-FAST-Lab/ego-planner-v2.git
-    version: 0000000000000000000000000000000000000000
+    version: 9d85475ea7b9bf5c112cf7c3c3d0d3f9e96d9010  # default branch @ 2026-05-21

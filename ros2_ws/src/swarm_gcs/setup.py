@@ -13,15 +13,10 @@ setup(
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="Nikola Markovic",
-    maintainer_email="nikolamarkovic.idea@gmail.com",
+    maintainer_email="dev.markovic@protonmail.com",
     description="Ground control station ROS nodes.",
     license="Apache-2.0",
     tests_require=["pytest"],
-    entry_points={
-        "console_scripts": [
-            "bandwidth_manager = swarm_gcs.bandwidth_manager_node:main",
-            "telemetry_aggregator = swarm_gcs.telemetry_aggregator_node:main",
-            "swarm_markers = swarm_gcs.swarm_markers_node:main",
-        ],
-    },
+    # Phase 0 scaffold — GCS nodes land in Phase 1-2.
+    entry_points={"console_scripts": []},
 )

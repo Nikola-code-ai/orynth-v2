@@ -13,13 +13,10 @@ setup(
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="Nikola Markovic",
-    maintainer_email="nikolamarkovic.idea@gmail.com",
+    maintainer_email="dev.markovic@protonmail.com",
     description="ArduPilot SITL multi-instance launcher.",
     license="Apache-2.0",
     tests_require=["pytest"],
-    entry_points={
-        "console_scripts": [
-            "sitl_launcher = swarm_sim.sitl_launcher:main",
-        ],
-    },
+    # Phase 0 scaffold — sitl_launcher lands in Phase 2.
+    entry_points={"console_scripts": []},
 )

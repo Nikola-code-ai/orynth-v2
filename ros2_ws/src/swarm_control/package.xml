@@ -3,7 +3,7 @@
   <name>swarm_control</name>
   <version>0.1.0</version>
   <description>Backend-neutral swarm control: VehicleAdapter, MavrosAdapter, formation math, SwarmController state machine, swarm_server_node.</description>
-  <maintainer email="nikolamarkovic.idea@gmail.com">Nikola Markovic</maintainer>
+  <maintainer email="dev.markovic@protonmail.com">Nikola Markovic</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
