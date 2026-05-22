@@ -20,9 +20,9 @@ A working but architecturally compromised 5-drone swarm prototype exists at `../
 | 2 | Perception scaffold sat empty for months (no `package.xml`) | `swarm_perception` ships in Phase 0 with a passthrough detector; Phase 3 swaps in YOLOv8. |
 | 3 | No CI/CD despite 21 unit tests | GitHub Actions: lint + unit on every PR, SITL smoke on PR + nightly. |
 | 4 | Floating apt versions, no pinning | Docker images by SHA256 digest, apt by `pkg=version`, pip with `--require-hashes`, ROS via vcstool `.repos` with git SHAs, model weights via Git LFS + SHA manifest. |
-| 5 | Aerostack2 lock-in (research-grade, small community) | MAVROS + QGroundControl + ardupilot_gz (industry-standard ArduPilot ecosystem). |
+| 5 | Aerostack2 lock-in (research-grade, small community) | MAVROS + Mission Planner / QGC + ardupilot_gz (industry-standard ArduPilot ecosystem). |
 | 6 | No SLAM/3D mapping | FAST-LIO2 on leader, RTAB-Map on followers, OctoMap for occupancy — from Phase 4. |
-| 7 | Single GCS (Foxglove only) lost MAVLink-native tooling | QGroundControl for safety/MAVLink ops + Foxglove for ROS 2 viz. Roles separated. |
+| 7 | Single GCS (Foxglove only) lost MAVLink-native tooling | Mission Planner / QGC for safety/MAVLink ops + Foxglove for ROS 2 viz. Roles separated. |
 
 ---
 
@@ -38,7 +38,7 @@ One pick per slot, industry-standard, justified by community size and official e
 | MAVLink ↔ ROS bridge | **MAVROS** (`mavlink/mavros`, ~1.1k★) | De-facto standard. AP_DDS still ~12-18 months behind on mission/parameter APIs. `VehicleAdapter` abstraction keeps AP_DDS swap path open. |
 | DDS (intra/LAN) | **Cyclone DDS** (`eclipse-cyclonedds`, ~900★) | Lower memory than Fast DDS; recommended alternative RMW. |
 | DDS edge (WAN) | **Zenoh** via `zenoh-plugin-ros2dds` (~5.4k★) | Selective topic forwarding, store-forward over lossy WiFi. Used only on leader-to-GCS link. |
-| GCS (MAVLink) | **QGroundControl 4.4+** (~3.4k★) | Industry-standard ArduPilot GCS. Owns arming, parameters, missions, geofence, RTL. |
+| GCS (MAVLink) | **Mission Planner 1.3.80+** · **QGroundControl 4.4+** (~3.4k★) | Mission Planner — ArduPilot's first-party reference GCS, **primary**: deepest Copter parameter/calibration coverage + a built-in Swarm screen (ADR 0008). QGC — the cross-platform (Linux/macOS) **alternative**. Either owns arming, parameters, missions, geofence, RTL. |
 | GCS (ROS) | **Foxglove Studio 2.x** (~1.6k★) | Modern ROS 2 visualization. Owns mission/perception view. |
 | Mission protocol | **MAVLink Mission Protocol via MAVROS `WaypointPush`** | No MAVSDK on top — overlap and bloat. |
 | Swarm orchestration | **BehaviorTree.CPP** (~3.2k★) + Crazyswarm2 patterns | Same BT engine Nav2 uses; Groot2 GUI. Crazyswarm2 architecture adapted from CFlib to MAVROS. |
@@ -68,7 +68,7 @@ v2/
 │   ├── runtime.amd64.Dockerfile        # slim, workstation/SITL
 │   ├── runtime.arm64.Dockerfile        # FROM nvcr l4t-jetpack:r36.3.0
 │   ├── sitl.Dockerfile                 # ArduPilot SITL + Gazebo Harmonic
-│   ├── gcs.Dockerfile                  # QGC + Foxglove + Zenoh router
+│   ├── gcs.Dockerfile                  # Mission Planner/QGC + Foxglove + Zenoh
 │   ├── compose.{dev,swarm,hil,field}.yaml
 │   └── digests.lock                    # SHA256s of all base images
 │
@@ -197,7 +197,7 @@ The first **on-hardware** flight — the same leader-follow on real airframes. I
   - `config/ardupilot_params/` — per-airframe demo params: geofence, RC-loss failsafe, GUIDED tuning, distinct `MAV_SYSID` per drone.
   - `docs/runbooks/first_flight.md` — demo flight runbook: roles (one safety pilot per drone, RC override armed), preflight, abort triggers, formation spacing.
   - `demo.json` Foxglove layout — leader + follower poses and live per-follower formation error.
-- **Prerequisite — condensed safety gate** (cleared before any motor spins): **Phase 2.5a passed in SITL**; per-airframe compass/accel calibration; props-off GUIDED arm test per drone; geofence + RC-loss failsafe verified via QGC (a subset of the Phase 6 HIL checklist); single-drone manual hover for the leader and each follower individually before any formation flight.
+- **Prerequisite — condensed safety gate** (cleared before any motor spins): **Phase 2.5a passed in SITL**; per-airframe compass/accel calibration; props-off GUIDED arm test per drone; geofence + RC-loss failsafe verified via Mission Planner / QGC (a subset of the Phase 6 HIL checklist); single-drone manual hover for the leader and each follower individually before any formation flight.
 - **Acceptance**: outdoors, open area, ≥5 m formation spacing. Leader manually piloted (LOITER/POSHOLD) by a safety pilot; ≥2 followers (target 4) autonomously take off, form up, and track the manually-moved leader for ≥60 s of leader motion with mean horizontal formation error <2 m per follower (looser than the 0.5 m SITL gate — hardware GPS without RTK, wind, first flight); the leader-pose watchdog demonstrably holds a follower on a simulated link drop; coordinated land, all disarm. Recorded as `accept/demo_leaderfollow.mcap` + flight video.
 - **Sign-off**: no CI gate (hardware). Safety-pilot + maintainer sign-off on the `first_flight.md` checklist; demo footage attached to the milestone.
 
@@ -215,7 +215,7 @@ The first **on-hardware** flight — the same leader-follow on real airframes. I
 
 ### Phase 5 — Autonomous Search + Nav2 (Week 10-11)
 
-- **Deliverables**: `search_and_rescue.xml` BT: takeoff → diamond → boustrophedon over operator polygon → on detection, leader breaks formation, hovers over geolocated position, calls followers, signals operator → RTL. Per-drone Nav2 for local avoidance using leader's OctoMap (shared via Zenoh). Missions editable via QGC waypoint upload; follower patterns auto-generated.
+- **Deliverables**: `search_and_rescue.xml` BT: takeoff → diamond → boustrophedon over operator polygon → on detection, leader breaks formation, hovers over geolocated position, calls followers, signals operator → RTL. Per-drone Nav2 for local avoidance using leader's OctoMap (shared via Zenoh). Missions editable via Mission Planner / QGC waypoint upload; follower patterns auto-generated.
 - **Acceptance**: in `search_field.sdf` with 3 humans hidden in 100×100 m polygon, swarm finds ≥2 in <5 min and converges.
 - **CI gate**: nightly headless run, assert detection count ≥2.
 
@@ -246,7 +246,7 @@ The first **on-hardware** flight — the same leader-follow on real airframes. I
   - `scripts/ci/run_sitl_smoke.sh` uses `pexpect` to drive compose + assert log lines + clean teardown.
 - **Leader-follow demo** (Phase 2.5): proven in SITL first — **2.5a**, the operator moves the leader in the Gazebo swarm and the four followers track the diamond live (<0.5 m) — then flown on hardware — **2.5b**, the first on-hardware flight, behind a condensed safety gate (per-airframe calibration, props-off GUIDED arm, geofence + RC-loss failsafe; a subset of the Phase 6 HIL checklist). `docs/runbooks/first_flight.md` checklist; safety-pilot sign-off. Not in CI.
 - **HIL bench** (Phase 6+): `docs/runbooks/hil_test.md` checklist — power order, telemetry verify, GUIDED arm props-off, RC override <100 ms, failsafe on RC loss, thermal soak. Safety pilot sign-off required.
-- **Field** (Phase 7+): `docs/runbooks/field_deploy.md` — site survey, RF check, geofence via QGC, sequential bringup (drone_0 first), 3 m hover per drone before formation, hard-abort triggers documented.
+- **Field** (Phase 7+): `docs/runbooks/field_deploy.md` — site survey, RF check, geofence via Mission Planner / QGC, sequential bringup (drone_0 first), 3 m hover per drone before formation, hard-abort triggers documented.
 
 ---
 
@@ -287,7 +287,7 @@ The first **on-hardware** flight — the same leader-follow on real airframes. I
 | **SITL → reality drift** | Same firmware binary in SITL and on Pixhawk; the Phase 2.5 demo flies only behind a condensed props-off safety gate, the full HIL matrix runs at Phase 6 before the field mission; Gazebo sensor noise tuned from real flight logs each iteration. |
 | **Phase 2.5 demo: WiFi inside the formation loop, flight before full HIL** | Followers track the leader over the Cyclone DDS LAN — a dropout would otherwise leave a follower coasting on a stale setpoint. Phase 2.5a rehearses the whole loop in SITL before any hardware flight; a follower-side leader-pose watchdog (stale → hold / LOITER); generous spacing and low leader speed keep tracking latency non-critical; one safety pilot per drone with RC override; condensed props-off safety gate (calibration + geofence + GUIDED arm test) is a hard prerequisite. Native ArduPilot FOLLOW mode is the documented fallback (ADR 0008). |
 | **Dependency supply chain** | Every dep pinned: git SHA in `.repos`, pip hash, apt version, Docker digest; `digests.lock` regenerated quarterly; build scripts fail loudly if anything unpinned. |
-| **Operator cognitive load** | QGC owns safety (mode/geofence/arm/RTL); Foxglove owns mission (formation/search/perception); operator runbook specifies which tool for which task; Phase 7 entry requires tabletop dry run. |
+| **Operator cognitive load** | the MAVLink GCS (Mission Planner / QGC) owns safety (mode/geofence/arm/RTL); Foxglove owns mission (formation/search/perception); operator runbook specifies which tool for which task; Phase 7 entry requires tabletop dry run. |
 
 ---
 

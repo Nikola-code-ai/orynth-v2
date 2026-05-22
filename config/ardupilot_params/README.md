@@ -23,7 +23,12 @@ MAVROS router. This is the same per-instance SYSID rule the SITL swarm uses
 ## Loading them
 
 Load `demo_common.parm` first, then the one `drone_<N>.parm` for that airframe.
-Either GCS works:
+Any of these works:
+
+**Mission Planner** (primary) — *Config → Full Parameter List → Load from file*,
+pick `demo_common.parm`, click **Write Params**; repeat for `drone_<N>.parm`,
+then **reboot the FC**. (Mission Planner loads into the grid first — the
+**Write Params** step is what actually pushes them to the FC.)
 
 **QGroundControl** — *Vehicle Setup → Parameters → Tools → Load from file*,
 pick `demo_common.parm`, repeat for `drone_<N>.parm`, then **reboot the FC**.

@@ -400,7 +400,7 @@ Deliverables per `PLAN.md` § D, Phase 2.5b.
 
 Entry criteria before any motor spins: Phase 2.5a passed in SITL (done) + the
 condensed safety gate in `first_flight.md` § 2 (per-airframe calibration,
-props-off GUIDED arm test, geofence + RC-loss failsafe via QGC, single-drone
+props-off GUIDED arm test, geofence + RC-loss failsafe via Mission Planner / QGC, single-drone
 manual hover for the leader and each follower).
 
 ---

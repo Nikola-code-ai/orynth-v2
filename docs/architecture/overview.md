@@ -18,7 +18,7 @@ This document is a navigation aid. Authoritative content lives in `PLAN.md` (can
 
 ```
                                  ┌─────────────────┐
-                                 │ Operator (QGC + │
+                                 │ Operator (GCS + │
                                  │ Foxglove Studio)│
                                  └────────┬────────┘
                                           │ Zenoh (selective topics)
@@ -40,6 +40,9 @@ This document is a navigation aid. Authoritative content lives in `PLAN.md` (can
 Each drone:
   ROS 2 Humble · MAVROS ↔ ArduPilot (Copter 4.5.x) · robot_localization EKF
 ```
+
+**GCS** above is the MAVLink ground station — **Mission Planner** (primary) or
+**QGroundControl** (cross-platform alternative). See `PLAN.md` § A.
 
 ## Topic taxonomy & QoS
 

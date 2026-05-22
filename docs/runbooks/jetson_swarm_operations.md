@@ -27,7 +27,7 @@ controller** over serial. The Jetsons share a WiFi LAN and one ROS 2 graph
             │                                          │
             └──────────── Cyclone DDS WiFi LAN ─────────┘
                           ROS_DOMAIN_ID = 42
-   Operator laptop: QGroundControl (MAVLink safety) + Foxglove (ROS view)
+   Operator laptop: Mission Planner / QGC (MAVLink safety) + Foxglove (ROS view)
 ```
 
 - **Every Jetson** runs one namespaced MAVROS instance against its FC.
@@ -152,11 +152,18 @@ docker exec -it orynth-demo-0 bash -lc \
 
 ## 4. Single drone — control
 
-### 4.1 Via QGroundControl (MAVLink — the safety GCS)
+### 4.1 Via the MAVLink GCS — Mission Planner (or QGroundControl)
 
-Connect QGC to the FC: a UDP MAVLink endpoint, or its own telemetry radio. QGC
-owns arming, flight modes, parameters, geofence and RTL. For a single bench
-drone this is the primary control path — arm, take off, fly, land from QGC.
+Connect the GCS to the FC over a UDP MAVLink endpoint or its own telemetry
+radio. The GCS owns arming, flight modes, parameters, geofence and RTL — for a
+single bench drone this is the primary control path: arm, take off, fly, land
+from the GCS.
+
+- **Mission Planner** (primary) — ArduPilot's first-party reference GCS. Pick
+  the COM / UDP port and baud at the top-right and click **Connect**; deepest
+  Copter parameter and calibration coverage, plus a built-in Swarm screen.
+- **QGroundControl** (alternative) — the cross-platform choice when the operator
+  laptop runs Linux or macOS; auto-connects on a detected link.
 
 ### 4.2 Via the ROS service surface
 

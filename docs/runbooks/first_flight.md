@@ -48,7 +48,7 @@ Phase 6 (`PLAN.md` § D, Phase 2.5b prerequisite).
 - [ ] **Props-off GUIDED arm test** — each drone, props **off**: arm in GUIDED
       via the companion, confirm `/drone_<N>/mavros/state` shows `armed: true`,
       disarm. No drone proceeds that cannot arm cleanly.
-- [ ] **Geofence + failsafes verified via QGC** — fence enabled; trip RC-loss
+- [ ] **Geofence + failsafes verified via Mission Planner / QGC** — fence enabled; trip RC-loss
       failsafe (transmitter off) and confirm RTL; confirm battery failsafe
       thresholds match the packs.
 - [ ] **Single-drone manual hover** — the leader, then *each* follower
