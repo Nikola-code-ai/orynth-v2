@@ -15,6 +15,7 @@
 | 0 | Repo scaffold + CI + Docker baseline | **Complete** — 2026-05-21 |
 | 1 | Single-drone ArduPilot SITL + MAVROS + Foxglove | **Complete** — 2026-05-21 |
 | 2 | 5-drone SITL swarm + diamond formation | Not started |
+| 2.5 | Hardware demo: leader-follow swarm | Not started |
 | 3 | YOLO human detection + Isaac ROS pipeline | Not started |
 | 4 | LiDAR mapping (FAST-LIO2 + OctoMap) | Not started |
 | 5 | Autonomous search + Nav2 | Not started |
@@ -223,7 +224,8 @@ Verified locally on an amd64 workstation via `make test` + `make sitl-accept`:
 
 ## Current focus
 
-Phase 1 complete. Next: Phase 2 (5-drone SITL swarm + diamond formation).
+Phase 1 complete. Next: Phase 2 (5-drone SITL swarm + diamond formation), then
+the Phase 2.5 hardware-demo milestone — leader-follow swarm on real airframes.
 
 ## Next — Phase 2 entry
 
@@ -232,8 +234,50 @@ Phase 2 (5-drone SITL swarm + diamond formation) — first tasks:
 - `swarm_sim/sitl_launcher.py` — multi-instance SITL at offset spawn points,
   per-instance ports (PLAN § I, critical file #5).
 - `swarm_server_node` exposing `/swarm/takeoff|land|engage_formation`.
-- Port + extend `formation.py`; implement `MavrosAdapter.hold_reference`.
+- Port + extend `formation.py` — build it **reference-agnostic** (a static
+  centroid now; the Phase 2.5 demo feeds the same code a live leader pose);
+  implement `MavrosAdapter.hold_reference`.
 - `compose.swarm.yaml` + wire the `sitl-5-drone-swarm` nightly job.
+
+---
+
+## Phase 2.5 — Hardware Demo: Leader-Follow Swarm (planned)
+
+A milestone, not a numbered phase: the first **on-hardware** flight, run after
+Phase 2. An operator manually manipulates the leader (`drone_0`); ≥2 followers
+autonomously hold a formation relative to the leader's live pose and track it as
+it moves. Mapping, computer vision, and autonomous search stay post-demo
+(Phases 3-5, unchanged). Specced in `PLAN.md` § D, Phase 2.5; integration
+decision in [`docs/adr/0008-leader-follow-demo-integration.md`](docs/adr/0008-leader-follow-demo-integration.md).
+
+**Integration**: followers fly GUIDED, commanded by `swarm_server_node` through
+`MavrosAdapter`; the formation reference is the leader's live MAVROS pose — a
+small generalization of Phase 2's `formation.py`. Native ArduPilot FOLLOW mode
+(`FOLL_SYSID` / `FOLL_OFS_*`) is the documented fallback (ADR 0008).
+
+**Entry criteria** (before any motor spins):
+
+- Phase 2 complete — `formation.py` / `swarm_server_node` proven in 5-drone SITL.
+- `formation.py` confirmed reference-agnostic — the demo feeds it a live leader
+  pose with no rewrite.
+- Condensed safety gate (a subset of the Phase 6 HIL checklist): per-airframe
+  compass/accel calibration, props-off GUIDED arm test, geofence + RC-loss
+  failsafe via QGC, single-drone manual hover for the leader and each follower.
+
+**First tasks**:
+
+- Leader-relative formation mode in `swarm_control` — `formation.py` live
+  reference, `MavrosAdapter.hold_reference` moving-setpoint tracking,
+  `/swarm/follow_leader` engage/disengage, follower-side leader-pose watchdog.
+- `scripts/bringup/demo_swarm.sh` + per-airframe params in
+  `config/ardupilot_params/`.
+- `docs/runbooks/first_flight.md` demo runbook; `demo.json` Foxglove layout.
+
+**Acceptance gate** (`PLAN.md` § D): manually-piloted leader, ≥2 followers
+(target 4) tracking a live leader-relative formation <2 m mean horizontal error
+for ≥60 s of leader motion; watchdog holds a follower on a simulated link drop;
+coordinated land. Recorded `accept/demo_leaderfollow.mcap` + flight video;
+safety-pilot + maintainer sign-off — no CI gate (hardware).
 
 ---
 
@@ -251,3 +295,9 @@ Phase 2 (5-drone SITL swarm + diamond formation) — first tasks:
   `set -u`, SITL `FRAME_CLASS`, MAVLink stream rates — see "Phase 1 fixes
   applied (acceptance pass)"). Full SITL mission (arm/takeoff/waypoint/land)
   passes; `accept/phase1.mcap` recorded. Phase 1 marked complete.
+- **2026-05-21** — Added the **Phase 2.5 hardware-demo milestone**
+  (leader-follow swarm) to the roadmap: `PLAN.md` § D (new phase) plus § B/§ E/
+  § G/§ H, new ADR 0008 (ROS-side leader-relative formation over native FOLLOW
+  mode), status table, and the planned-section above. A deliberately minimal
+  first-on-hardware-flight checkpoint after Phase 2 — manual leader manipulation
+  + followers in formation; mapping/CV remain Phases 3-5.

@@ -91,7 +91,7 @@ v2/
 │   └── models/manifest.yaml            # YOLO model SHA256 + URL
 │
 ├── scripts/
-│   ├── bringup/{sitl_swarm,field_swarm,hil}.sh
+│   ├── bringup/{sitl_swarm,demo_swarm,field_swarm,hil}.sh
 │   ├── calibration/{compass,esc,accel}.sh
 │   ├── log_analysis/{rosbag_to_csv,dataflash_to_kml}.py
 │   ├── build/{build_workspace,build_yolo_tensorrt}.sh
@@ -99,7 +99,7 @@ v2/
 │
 ├── docs/
 │   ├── architecture/{overview,topics,namespacing,dataflow.svg}
-│   ├── adr/0001-0007.md
+│   ├── adr/0001-0008.md
 │   ├── runbooks/{first_flight,sitl_swarm_dev,hil_test,field_deploy,emergency}.md
 │   ├── hardware/{bom,wiring,calibration,airframe_setup}.md
 │   └── ci/{pipeline,smoke_test_spec}.md
@@ -107,7 +107,7 @@ v2/
 └── .github/workflows/{lint,unit,sitl_smoke,docker_build,release}.yml
 ```
 
-ADRs locked in from day one:
+ADRs (0001-0007 locked in from day one; 0008 added at the Phase 2.5 milestone):
 
 1. ROS Humble on JetPack 6
 2. MAVROS over AP_DDS (for now)
@@ -116,6 +116,7 @@ ADRs locked in from day one:
 5. FAST-LIO2 (leader) + RTAB-Map (followers)
 6. YOLOv8 + TensorRT + Isaac ROS
 7. Version-pinning policy
+8. Leader-follow integration for the hardware demo
 
 ---
 
@@ -166,9 +167,24 @@ ADRs locked in from day one:
 
 ### Phase 2 — 5-Drone SITL Swarm + Diamond Formation (Week 4-5)
 
-- **Deliverables**: `sitl_launcher.py` spawning N ArduPilot SITL instances at offset spawn points with per-instance ports (`5760+N*10` master, `14550+N*10` UDP); 5 namespaced MAVROS instances; `swarm_server_node` exposing `/swarm/takeoff`, `/swarm/land`, `/swarm/engage_formation`, `/swarm/<id>/manual_goto`; formation math ported from v1.
+- **Deliverables**: `sitl_launcher.py` spawning N ArduPilot SITL instances at offset spawn points with per-instance ports (`5760+N*10` master, `14550+N*10` UDP); 5 namespaced MAVROS instances; `swarm_server_node` exposing `/swarm/takeoff`, `/swarm/land`, `/swarm/engage_formation`, `/swarm/<id>/manual_goto`; formation math ported from v1, implemented **reference-agnostic** — a static centroid for the diamond hold, while the same code accepts a live leader pose at the Phase 2.5 demo (ADR 0008).
 - **Acceptance**: simultaneous 5-drone takeoff, diamond hold 60 s with <0.5 m mean horizontal drift per follower, coordinated land. `operator.json` Foxglove layout shows all 5.
 - **CI gate**: 5-drone smoke nightly; PR CI stays single-drone for budget.
+
+### Phase 2.5 — Hardware Demo: Leader-Follow Swarm (Milestone, after Phase 2)
+
+The first **on-hardware** flight — a deliberately minimal vertical slice proving the swarm physically works. An operator manually manipulates the leader (`drone_0`); the followers autonomously hold a formation relative to the leader's live pose and track it as the leader moves. Mapping, computer vision, and autonomous search are explicitly **post-demo** (Phases 3-5, unchanged). This is a checkpoint, not a new workstream — it reuses Phase 2's formation stack on real airframes. It also pulls a hardware flight ahead of the planned HIL phase (Phase 6), so a condensed safety gate is a hard prerequisite.
+
+- **Integration** (ADR 0008): followers fly **GUIDED**, commanded by `swarm_server_node` streaming position setpoints through `MavrosAdapter`; the formation reference is the leader's *live* MAVROS pose rather than a static centroid — a small generalization of Phase 2's `formation.py`. ArduPilot's native **FOLLOW mode** (`FOLL_SYSID` / `FOLL_OFS_*`) is the documented fallback if ROS-side tracking proves jittery on hardware.
+- **Deliverables**:
+  - `swarm_control` leader-relative formation mode — `formation.py` accepts a live reference pose; `MavrosAdapter.hold_reference` generalized to track a moving setpoint; `swarm_server_node` gains `/swarm/follow_leader` (engage/disengage) and a follower-side **leader-pose watchdog** (stale leader pose → follower holds position / LOITER).
+  - `scripts/bringup/demo_swarm.sh` — hardware bringup; blocks until the leader and every follower report healthy EKF, GPS lock, battery >90%.
+  - `config/ardupilot_params/` — per-airframe demo params: geofence, RC-loss failsafe, GUIDED tuning, distinct `MAV_SYSID` per drone.
+  - `docs/runbooks/first_flight.md` — demo flight runbook: roles (one safety pilot per drone, RC override armed), preflight, abort triggers, formation spacing.
+  - `demo.json` Foxglove layout — leader + follower poses and live per-follower formation error.
+- **Prerequisite — condensed safety gate** (a subset of the Phase 6 HIL checklist, cleared before any motor spins): per-airframe compass/accel calibration; props-off GUIDED arm test per drone; geofence + RC-loss failsafe verified via QGC; single-drone manual hover for the leader and each follower individually before any formation flight.
+- **Acceptance**: outdoors, open area, ≥5 m formation spacing. Leader manually piloted (LOITER/POSHOLD) by a safety pilot; ≥2 followers (target 4) autonomously take off, form up, and track the manually-moved leader for ≥60 s of leader motion with mean horizontal formation error <2 m per follower (looser than Phase 2's 0.5 m SITL gate — hardware GPS without RTK, wind, first flight); the leader-pose watchdog demonstrably holds a follower on a simulated link drop; coordinated land, all disarm. Recorded as `accept/demo_leaderfollow.mcap` + flight video.
+- **Sign-off**: no CI gate (hardware). Safety-pilot + maintainer sign-off on the `first_flight.md` checklist; demo footage attached to the milestone.
 
 ### Phase 3 — YOLO Human Detection + Isaac ROS Pipeline (Week 6-7)
 
@@ -213,6 +229,7 @@ ADRs locked in from day one:
   - PR smoke: 1 drone, arm/takeoff/land, 8 min budget.
   - Nightly: 5 drones, full search mission against fixture world.
   - `scripts/ci/run_sitl_smoke.sh` uses `pexpect` to drive compose + assert log lines + clean teardown.
+- **Hardware demo** (Phase 2.5): the first on-hardware flight. A condensed safety gate — per-airframe calibration, props-off GUIDED arm, geofence + RC-loss failsafe (a subset of the Phase 6 HIL checklist) — clears before any motor spins; then a manually-piloted leader with ≥2 followers holding a live leader-relative formation. `docs/runbooks/first_flight.md` checklist; safety-pilot sign-off. Not in CI.
 - **HIL bench** (Phase 6+): `docs/runbooks/hil_test.md` checklist — power order, telemetry verify, GUIDED arm props-off, RC override <100 ms, failsafe on RC loss, thermal soak. Safety pilot sign-off required.
 - **Field** (Phase 7+): `docs/runbooks/field_deploy.md` — site survey, RF check, geofence via QGC, sequential bringup (drone_0 first), 3 m hover per drone before formation, hard-abort triggers documented.
 
@@ -252,7 +269,8 @@ ADRs locked in from day one:
 | **Wireless link saturation** | Always-on @ ~12% of 50 Mbps; Zenoh selective forwarding via leader-only WAN link; QoS prioritizes telemetry; adaptive bitrate based on RSSI; field tests expand range incrementally. |
 | **ArduPilot SITL port collisions** | Deterministic port blocks: `5760+N*10` master, `14550+N*10` UDP; `SYSID_THISMAV=N+1` per instance; integration test verifies 5 distinct heartbeats before declaring ready. |
 | **Heterogeneous SLAM** | Everything anchored to GPS-derived ENU via `robot_localization` EKF; leader OctoMap canonical; followers project detections *into* the map, not contribute geometry; map_merge on GCS, not in-flight. |
-| **SITL → reality drift** | Same firmware binary in SITL and on Pixhawk; HIL Phase 6 before any flight; Gazebo sensor noise tuned from real flight logs each iteration. |
+| **SITL → reality drift** | Same firmware binary in SITL and on Pixhawk; the Phase 2.5 demo flies only behind a condensed props-off safety gate, the full HIL matrix runs at Phase 6 before the field mission; Gazebo sensor noise tuned from real flight logs each iteration. |
+| **Phase 2.5 demo: WiFi inside the formation loop, flight before full HIL** | Followers track the leader over the Cyclone DDS LAN — a dropout would otherwise leave a follower coasting on a stale setpoint. Follower-side leader-pose watchdog (stale → hold / LOITER); generous spacing and low leader speed keep tracking latency non-critical; one safety pilot per drone with RC override; condensed props-off safety gate (calibration + geofence + GUIDED arm test) is a hard prerequisite. Native ArduPilot FOLLOW mode is the documented fallback (ADR 0008). |
 | **Dependency supply chain** | Every dep pinned: git SHA in `.repos`, pip hash, apt version, Docker digest; `digests.lock` regenerated quarterly; build scripts fail loudly if anything unpinned. |
 | **Operator cognitive load** | QGC owns safety (mode/geofence/arm/RTL); Foxglove owns mission (formation/search/perception); operator runbook specifies which tool for which task; Phase 7 entry requires tabletop dry run. |
 
@@ -264,6 +282,7 @@ ADRs locked in from day one:
 - `docker compose -f docker/compose.dev.yaml up` — Phase 1 gate; SITL + MAVROS + Foxglove healthy <60 s.
 - `bash scripts/ci/run_sitl_smoke.sh` — Phase 1 acceptance; arm, takeoff 5 m, waypoint, land, exit 0.
 - `bash scripts/bringup/sitl_swarm.sh` — Phase 2 gate; 5 drones in diamond, <0.5 m drift logged.
+- `bash scripts/bringup/demo_swarm.sh` — Phase 2.5 demo gate; manually-piloted leader, ≥2 followers hold a live leader-relative formation <2 m error for ≥60 s; safety-pilot sign-off on `docs/runbooks/first_flight.md`.
 - `colcon test --packages-select swarm_control swarm_perception swarm_mapping swarm_behaviors` — unit gate, 70%+ coverage.
 - `ros2 launch swarm_bringup sitl_swarm.launch.py world:=search_field` — full sim; in Foxglove send `/swarm/start_search` action with polygon — expect ≥2 of 3 actors detected and converged within 5 min.
 

@@ -12,6 +12,7 @@ This document is a navigation aid. Authoritative content lives in `PLAN.md` (can
 6. [`../adr/0005-fast-lio2-leader-rtabmap-followers.md`](../adr/0005-fast-lio2-leader-rtabmap-followers.md) — SLAM split.
 7. [`../adr/0006-yolov8-tensorrt-isaac-ros.md`](../adr/0006-yolov8-tensorrt-isaac-ros.md) — perception.
 8. [`../adr/0007-version-pinning-policy.md`](../adr/0007-version-pinning-policy.md) — reproducibility.
+9. [`../adr/0008-leader-follow-demo-integration.md`](../adr/0008-leader-follow-demo-integration.md) — leader-follow for the hardware demo.
 
 ## High-level data flow
 
@@ -46,4 +47,5 @@ See `PLAN.md` § C and the future `topics.md` reference.
 
 ## Phase status
 
-Current: **Phase 0** — scaffolding. See `PLAN.md` § D.
+See `WORKFLOW.md` for live phase status and `PLAN.md` § D for the roadmap —
+Phases 0-7 plus the **Phase 2.5** hardware-demo milestone (leader-follow swarm).

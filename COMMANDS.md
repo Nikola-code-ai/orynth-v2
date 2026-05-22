@@ -282,6 +282,9 @@ $ git push origin main
 
 ## Later phases
 
-Phase 2+ command sequences are added here as each phase lands. See
-`docs/runbooks/` for operational runbooks (`sitl_swarm_dev.md`, etc.) and
-`WORKFLOW.md` for current phase status.
+Phase 2, the Phase 2.5 hardware demo, and later command sequences are added
+here as each lands. See `docs/runbooks/` for operational runbooks
+(`sitl_swarm_dev.md`, the demo's `first_flight.md`, …) and `WORKFLOW.md` for
+current phase status. The Phase 2.5 demo runs on real airframes — its
+acceptance gate and leader-follow integration are specified in `PLAN.md` § D
+and `docs/adr/0008-leader-follow-demo-integration.md`.
