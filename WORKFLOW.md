@@ -13,7 +13,7 @@
 | Phase | Title | Status |
 |---|---|---|
 | 0 | Repo scaffold + CI + Docker baseline | **Complete** — 2026-05-21 |
-| 1 | Single-drone ArduPilot SITL + MAVROS + Foxglove | Ready to start |
+| 1 | Single-drone ArduPilot SITL + MAVROS + Foxglove | **Complete** — 2026-05-21 |
 | 2 | 5-drone SITL swarm + diamond formation | Not started |
 | 3 | YOLO human detection + Isaac ROS pipeline | Not started |
 | 4 | LiDAR mapping (FAST-LIO2 + OctoMap) | Not started |
@@ -115,7 +115,21 @@ Recorded so the team can ratify or reverse them.
    imported until the phase that needs them. SHAs were pinned to upstream HEAD
    on 2026-05-21 (except `ardupilot`, pinned to tag `Copter-4.5.7`). Re-pin to
    the phase's validated ref when each phase begins. Phase 0 builds the
-   first-party workspace only and does not `vcs import` these.
+   first-party workspace only and does not `vcs import` these. Phase 1
+   validated `ardupilot` @ `Copter-4.5.7` against SITL; `ardupilot_gazebo` @ its
+   pinned SHA now builds cleanly in the SITL image but is not exercised until
+   Phase 2 runs Gazebo; `ardupilot_gz` stays a forward pin.
+
+5. **`compose.dev.yaml` companion builds its overlay at container start.** The
+   `companion` service `colcon build`s `swarm_control` + `swarm_bringup` into
+   `/opt/overlay` on `up`, rather than baking them into an image. This keeps the
+   edit→`up` dev loop rebuild-free; it adds ~15–25 s to cold-start, so the <60 s
+   PLAN § D gate is measured with the base/SITL images already built.
+
+6. **`PlatformProfile` trimmed.** `PLAN.md` § F asks to add
+   `ARDUPILOT_HARDWARE`; v1's `AEROSTACK2_SIM` is also dropped — v2 is
+   MAVROS-only (ADR 0002). The enum is now `ARDUPILOT_SITL` +
+   `ARDUPILOT_HARDWARE`.
 
 ---
 
@@ -135,19 +149,91 @@ Verified locally on an amd64 workstation (Docker 24 + buildx 0.34):
 arm64 leg not built locally (see deviation 3); `docker_build.yml` covers it on
 `main`.
 
+## Phase 1 — checklist
+
+Deliverables per `PLAN.md` § D, Phase 1.
+
+- [x] `swarm_control/swarm_api.py` + `vehicle_adapter.py` — ported from v1
+- [x] `swarm_control/mavros_adapter.py` — `MavrosAdapter` implementing the
+      `VehicleAdapter` contract against MAVROS (PLAN § I, critical file #4)
+- [x] `swarm_control/sitl_mission.py` — Phase 1 acceptance mission, exposed as
+      the `sitl_mission` console script
+- [x] `swarm_bringup/launch/sitl_single.launch.py` — MAVROS + Foxglove bringup
+- [x] `compose.dev.yaml` — `sitl` + `companion` services, both healthchecked
+- [x] `scripts/ci/run_sitl_smoke.sh` — drives the mission through the adapter
+      (replaces the Phase 0 placeholder `ros2 service call` script)
+- [x] `swarm_control` unit tests — adapter + API tests against a fake MAVROS
+      node, no live SITL (`colcon test` green: 22 tests, 0 failures)
+- [x] `sitl_smoke.yml` — single-drone PR gate, GitHub Actions layer cache
+- [x] `Makefile` — wraps Phase 0/1 commands; `make shell` for an interactive
+      container
+- [x] Acceptance gate — full SITL mission passed; see "Phase 1 acceptance
+      results" below
+
+### Phase 1 fixes applied (this pass)
+
+| Problem | Fix |
+|---|---|
+| `sitl.Dockerfile` ran ArduPilot's `install-prereqs-ubuntu.sh` as root, which the script refuses (`exit 1`) | Build ArduPilot as a non-root `apbuild` user with passwordless sudo |
+| `sitl.Dockerfile` declared an unused `ARDUPILOT_GZ_REF` and cloned `ardupilot_gazebo` at the moving `main` ref | Removed the unused ARG; pinned `ARDUPILOT_GAZEBO_REF` to the `orynth.repos` SHA (ADR 0007) |
+| `compose.dev.yaml` had no healthchecks, so `--wait` and the <60 s gate could not be enforced | Added TCP / `/mavros/state` healthchecks to both services |
+| `sitl_smoke.yml` built `:ci`-tagged images that `compose.dev.yaml` (which expects `:dev`) never used | Aligned tags to `:dev`; added a GHA buildx layer cache |
+
+### Phase 1 fixes applied (acceptance pass)
+
+Found while running the acceptance gate end to end:
+
+| Problem | Fix |
+|---|---|
+| `sitl.Dockerfile` never installed the GStreamer/RapidJSON/OpenCV dev packages `ardupilot_gazebo`'s CMake requires (`pkg_check_modules REQUIRED gstreamer-app-1.0`) — the SITL image build failed | Added the documented `ardupilot_gazebo` prerequisites in a layer *after* the slow (cached) ArduPilot build |
+| `sitl_companion.sh` ran under `set -u`; colcon's generated `setup.bash` dereferences unset vars (`COLCON_TRACE`) → companion exited 1, `up --wait` aborted | Bracket the overlay `source` with `set +u` / `set -u` |
+| Running the `arducopter` binary directly leaves `FRAME_CLASS=0` → `PreArm: Motors: Check frame class and type`, vehicle never armed | Load ArduPilot's `copter.parm` SITL defaults via `arducopter --defaults` |
+| MAVROS (ROS 2) does not request MAVLink data streams and `arducopter` streams nothing by default → `/mavros/local_position/pose` silent, every takeoff/waypoint altitude check timed out | Added `docker/sitl-params.parm` (serial0 `SR0_*` stream rates), layered via `--defaults` |
+
+## How to verify Phase 1
+
+```bash
+# Unit gate — adapter contract, no SITL
+make test
+
+# Acceptance — full single-drone SITL mission (builds images on first run)
+make sitl-smoke
+
+# Acceptance + recording
+make sitl-accept    # also writes accept/phase1.mcap
+```
+
+CI runs the same: `unit.yml` (colcon test) and `sitl_smoke.yml` (single-drone
+SITL smoke on every PR).
+
+## Phase 1 acceptance results (2026-05-21)
+
+Verified locally on an amd64 workstation via `make test` + `make sitl-accept`:
+
+| Gate | Result |
+|---|---|
+| `colcon build && colcon test` (unit gate) | Pass — 22 tests, 0 errors, 0 failures |
+| `docker buildx build` `orynth-sitl:dev` (ArduPilot SITL + Gazebo) | Pass |
+| `docker compose up --wait` cold-start | Pass — stack healthy in 7 s (gate: <60 s) |
+| GUIDED → arm | Pass — armed ~37 s after start (GPS/EKF convergence) |
+| Takeoff to 5 m | Pass — altitude reached ~6 s after command |
+| Waypoint to (10, 0, 5) | Pass — reached ~4 s after command |
+| Land + disarm | Pass — disarmed ~13 s after command |
+| Acceptance bag | Pass — `accept/phase1.mcap` recorded (`/mavros/state`, `local_position/pose`, `setpoint_raw/local`) |
+
 ## Current focus
 
-Phase 0 closed. Next: Phase 1 (single-drone SITL).
+Phase 1 complete. Next: Phase 2 (5-drone SITL swarm + diamond formation).
 
-## Next — Phase 1 entry
+## Next — Phase 2 entry
 
-Phase 1 (single-drone SITL) starts once Phase 0 is green. First tasks:
+Phase 2 (5-drone SITL swarm + diamond formation) — first tasks:
 
-- Port `vehicle_adapter.py` + `swarm_api.py` from v1 into `swarm_control/`.
-- Implement `mavros_adapter.py` (the v1→v2 lynchpin — see `PLAN.md` § I).
-- `sitl_single.launch.py` + verify `compose.dev.yaml` cold-starts in <60 s.
-- Re-pin `ardupilot` / `ardupilot_gz` / `ardupilot_gazebo` in `orynth.repos` to
-  the refs validated against SITL.
+- `swarm_sim/sitl_launcher.py` — multi-instance SITL at offset spawn points,
+  per-instance ports (PLAN § I, critical file #5).
+- `swarm_server_node` exposing `/swarm/takeoff|land|engage_formation`.
+- Port + extend `formation.py`; implement `MavrosAdapter.hold_reference`.
+- `compose.swarm.yaml` + wire the `sitl-5-drone-swarm` nightly job.
 
 ---
 
@@ -156,3 +242,12 @@ Phase 1 (single-drone SITL) starts once Phase 0 is green. First tasks:
 - **2026-05-21** — Created. Phase 0 implementation pass: pins resolved, build
   blockers fixed, unit test added, CI reworked. Phase 0 acceptance gate passed
   locally (amd64); phase marked complete.
+- **2026-05-21** — Phase 1 implementation pass: `MavrosAdapter` + `swarm_api` /
+  `vehicle_adapter` ported, `sitl_mission` runner, `sitl_single.launch.py`,
+  healthchecked `compose.dev.yaml`, adapter-driven smoke test, `Makefile`,
+  unit tests. `sitl.Dockerfile` non-root build fix.
+- **2026-05-21** — Phase 1 acceptance pass: ran the gate end to end. Four
+  blockers fixed (`ardupilot_gazebo` GStreamer deps, `sitl_companion.sh`
+  `set -u`, SITL `FRAME_CLASS`, MAVLink stream rates — see "Phase 1 fixes
+  applied (acceptance pass)"). Full SITL mission (arm/takeoff/waypoint/land)
+  passes; `accept/phase1.mcap` recorded. Phase 1 marked complete.

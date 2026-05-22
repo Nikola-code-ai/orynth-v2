@@ -6,11 +6,11 @@
 
 5-drone search-and-rescue swarm. ArduPilot flight controllers, Jetson Orin Nano companions, ROS 2 Humble, YOLOv8 human detection, LiDAR mapping on leader, outdoor mission profile.
 
-**Start here**: [`PLAN.md`](PLAN.md) is the canonical implementation plan. Every architectural decision, phase gate, dependency pin, and risk mitigation lives there. [`WORKFLOW.md`](WORKFLOW.md) tracks live status — which phase is in flight, what's done, and any deviations from the plan.
+**Start here**: [`PLAN.md`](PLAN.md) is the canonical implementation plan. Every architectural decision, phase gate, dependency pin, and risk mitigation lives there. [`WORKFLOW.md`](WORKFLOW.md) tracks live status — which phase is in flight, what's done, and any deviations from the plan. [`COMMANDS.md`](COMMANDS.md) is the step-by-step command reference for reproducing and verifying each phase.
 
 ## Status
 
-Phase 0 — scaffold + CI + Docker baseline. See [`WORKFLOW.md`](WORKFLOW.md) for the current checklist and `PLAN.md` § D for the full roadmap.
+Phase 1 — single-drone ArduPilot SITL + MAVROS + Foxglove. A backend-neutral `MavrosAdapter` flies the acceptance mission (arm → takeoff → waypoint → land); `make sitl-smoke` reproduces it. See [`WORKFLOW.md`](WORKFLOW.md) for the current checklist and `PLAN.md` § D for the full roadmap.
 
 ## Quick links
 

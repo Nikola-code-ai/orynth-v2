@@ -27,18 +27,29 @@ docker buildx build -f docker/base.Dockerfile -t orynth-base:dev .
 
 ## Phase 1 — single-drone SITL
 
-```bash
-docker compose -f docker/compose.dev.yaml up
-# Foxglove on http://localhost:8765 (open Foxglove Studio, connect to ws://localhost:8765)
-```
-
-In a second terminal:
+Build the images once (the SITL image compiles ArduPilot from source — slow the
+first time, cached after):
 
 ```bash
-bash scripts/ci/run_sitl_smoke.sh
+make base          # orynth-base:dev
+make sitl-smoke    # builds orynth-sitl:dev on demand, then runs the smoke test
 ```
 
-Expect: arm → takeoff 5 m → land in ~45 s, exit 0.
+`make sitl-smoke` cold-starts the stack, flies the acceptance mission
+(arm → GUIDED takeoff 5 m → waypoint (10,0,5) → land, all via `MavrosAdapter`)
+and tears down. Expect exit 0.
+
+To keep the stack up for interactive work / Foxglove:
+
+```bash
+make sitl-up       # docker compose up --wait (SITL + MAVROS + Foxglove bridge)
+# connect Foxglove Studio to ws://localhost:8765
+make sitl-down     # tear down
+```
+
+The adapter contract is also unit-tested without SITL — `make test`. Record the
+acceptance bag (`accept/phase1.mcap`) with `make sitl-accept`. Full command
+reference: `COMMANDS.md` § Phase 1.
 
 ## Phase 2 — 5-drone SITL swarm
 
