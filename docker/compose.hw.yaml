@@ -1,0 +1,59 @@
+# Single-drone HARDWARE bringup: MAVROS + Foxglove bridge against a REAL
+# ArduPilot flight controller wired to this companion computer over serial.
+#
+# This is the hardware counterpart of docker/compose.dev.yaml. It drops the
+# `sitl` service (there is no simulator — the FC is real) and instead passes
+# the host serial device through to the companion container, pointing MAVROS
+# at it via a serial FCU_URL.
+#
+#   make hw-up        # or: docker compose -f docker/compose.hw.yaml up -d --wait
+#
+# `--wait` blocks until the companion healthcheck confirms MAVROS has a LIVE
+# link to the flight controller (mavros/state connected == true), not merely
+# that the MAVROS node started.
+#
+# Overridable env (export before `up`, or use an .env file):
+#   FC_DEVICE  host serial device                  (default /dev/ttyTHS1)
+#   FCU_URL    MAVROS endpoint, serial:///dev:baud  (default 57600 baud)
+name: orynth-hw
+
+services:
+  companion:
+    image: orynth-base:dev
+    build:
+      context: ..
+      dockerfile: docker/base.Dockerfile
+    container_name: orynth-companion
+    volumes:
+      - ../ros2_ws:/workspace/ros2_ws:ro
+      - ../scripts:/workspace/scripts:ro
+    # Map the flight-controller serial device into the container. The host
+    # path is overridable; the in-container path is fixed at /dev/ttyTHS1 so
+    # FCU_URL never has to change when the host device name does. The base
+    # image runs as root, so no dialout group juggling is needed.
+    devices:
+      - "${FC_DEVICE:-/dev/ttyTHS1}:/dev/ttyTHS1"
+    environment:
+      - ROS_DOMAIN_ID=42
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      # MAVROS serial endpoint. ArduPilot TELEM ports default to 57600 baud;
+      # override FCU_URL if you raised SERIALx_BAUD on the FC.
+      - FCU_URL=${FCU_URL:-serial:///dev/ttyTHS1:57600}
+      - FOXGLOVE_PORT=8765
+    # sitl_companion.sh is backend-agnostic — it builds the overlay and
+    # launches sitl_single.launch.py with whatever FCU_URL it is handed. The
+    # "sitl" in the names is historical; nothing here touches a simulator.
+    command: ["bash", "/workspace/scripts/bringup/sitl_companion.sh"]
+    ports:
+      - "8765:8765"   # Foxglove bridge WebSocket
+    healthcheck:
+      # Healthy only once MAVROS reports a live link to the flight controller.
+      test:
+        - "CMD"
+        - "bash"
+        - "-c"
+        - "source /opt/ros/humble/setup.bash && timeout 7 ros2 topic echo --once /mavros/state 2>/dev/null | grep -iqE 'connected:[[:space:]]*true'"
+      interval: 6s
+      timeout: 8s
+      retries: 30
+      start_period: 25s

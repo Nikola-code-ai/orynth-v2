@@ -8,6 +8,7 @@
 # Run `make` (or `make help`) for the target list.
 
 COMPOSE := docker compose -f docker/compose.dev.yaml
+HW        := docker compose -f docker/compose.hw.yaml
 SWARM     := docker compose -f docker/compose.swarm.yaml
 SWARM_GUI := docker compose -f docker/compose.swarm.yaml -f docker/compose.swarm.gui.yaml
 BASE    := orynth-base:dev
@@ -16,7 +17,7 @@ PC_VENV := /tmp/orynth-pc-venv
 
 .DEFAULT_GOAL := help
 .PHONY: help base build test lint sitl-up sitl-smoke sitl-accept sitl-down \
-        swarm-smoke swarm-up swarm-down shell clean
+        hw-up hw-check hw-down swarm-smoke swarm-up swarm-down shell clean
 
 help: ## List available targets
 	@grep -hE '^[a-z][a-z-]*:.*## ' $(MAKEFILE_LIST) | \
@@ -51,6 +52,16 @@ sitl-accept: ## Run the smoke test and record accept/phase1.mcap
 
 sitl-down: ## Tear down the SITL stack
 	$(COMPOSE) down -v --remove-orphans
+
+hw-up: ## Bring up MAVROS against the wired flight controller (hardware)
+	$(HW) up -d --wait --wait-timeout 300
+	@echo "MAVROS linked to the FC — Foxglove: connect Studio to ws://localhost:8765"
+
+hw-check: ## Verify the MAVROS <-> FC link (run after hw-up)
+	docker exec -it orynth-companion bash /workspace/scripts/hardware/mavros_link_check.sh
+
+hw-down: ## Tear down the hardware MAVROS stack
+	$(HW) down -v --remove-orphans
 
 swarm-smoke: ## Phase 2 acceptance gate: 5-drone SITL swarm + diamond formation
 	bash scripts/bringup/sitl_swarm.sh
