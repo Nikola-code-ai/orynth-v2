@@ -1,0 +1,3 @@
+# Orynth v2 — drone_4 (follower) airframe identity. Load AFTER demo_common.parm.
+# System id 5 -> MAVROS tgt_system 5, namespace /drone_4 (DRONE_ID + 1).
+SYSID_THISMAV    5

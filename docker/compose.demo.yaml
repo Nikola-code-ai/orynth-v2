@@ -1,0 +1,68 @@
+# Phase 2.5b — leader-follow HARDWARE demo, one drone per Jetson Nano.
+#
+# This is the hardware swarm counterpart of docker/compose.swarm.yaml. Each
+# Jetson runs this compose file with its own DRONE_ID; the file brings up one
+# namespaced MAVROS against the real ArduPilot flight controller wired to that
+# Jetson. The leader's Jetson (DRONE_ID=0) additionally runs WITH_SWARM_SERVER
+# so it hosts the Foxglove bridge and the swarm orchestrator.
+#
+#   # on every Jetson, leader first:
+#   DRONE_ID=0 WITH_SWARM_SERVER=1 make demo-up   # leader  (drone_0)
+#   DRONE_ID=1 make demo-up                       # follower (drone_1)
+#   ...                                           # drone_2..4 likewise
+#
+# `network_mode: host` is required: the five Jetsons discover each other's ROS
+# graph over the physical WiFi LAN, which a Docker bridge network cannot reach.
+# On a LAN where the AP drops multicast, point CYCLONEDDS_URI at a peer-list
+# config under config/networks/ (see docs/runbooks/jetson_swarm_operations.md).
+#
+# Overridable env (export, or use an .env file):
+#   DRONE_ID            this drone's index 0..4           (default 0)
+#   DRONE_COUNT         drones in the swarm               (default 5)
+#   WITH_SWARM_SERVER   1 on the leader's Jetson only     (default 0)
+#   FC_DEVICE           host serial device to the FC      (default /dev/ttyTHS1)
+#   FCU_URL             MAVROS endpoint, serial:///dev:baud (default 57600 baud)
+#   CYCLONEDDS_URI      Cyclone DDS peer-list config       (default unset)
+name: orynth-demo
+
+services:
+  companion:
+    image: orynth-base:dev
+    build:
+      context: ..
+      dockerfile: docker/base.Dockerfile
+    container_name: orynth-demo-${DRONE_ID:-0}
+    # Host networking — cross-Jetson DDS discovery over the WiFi LAN.
+    network_mode: host
+    volumes:
+      - ../ros2_ws:/workspace/ros2_ws:ro
+      - ../scripts:/workspace/scripts:ro
+      - ../config:/workspace/config:ro
+    # The flight-controller serial device. Host path overridable; the
+    # in-container path is fixed at /dev/ttyTHS1 so FCU_URL never changes.
+    devices:
+      - "${FC_DEVICE:-/dev/ttyTHS1}:/dev/ttyTHS1"
+    environment:
+      - ROS_DOMAIN_ID=42
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=${CYCLONEDDS_URI:-}
+      - DRONE_ID=${DRONE_ID:-0}
+      - DRONE_COUNT=${DRONE_COUNT:-5}
+      - WITH_SWARM_SERVER=${WITH_SWARM_SERVER:-0}
+      - FCU_URL=${FCU_URL:-serial:///dev/ttyTHS1:57600}
+      - FOXGLOVE_PORT=8765
+      - LEADER_POSE_TIMEOUT=${LEADER_POSE_TIMEOUT:-1.5}
+      - FORMATION_ALT_STEP=0.0
+    command: ["bash", "/workspace/scripts/bringup/demo_companion.sh"]
+    healthcheck:
+      # Healthy once this drone's MAVROS reports a live link to its FC.
+      test:
+        - "CMD"
+        - "bash"
+        - "-c"
+        - "source /opt/ros/humble/setup.bash && timeout 7 ros2 topic echo --once /drone_${DRONE_ID:-0}/mavros/state 2>/dev/null | grep -iqE 'connected:[[:space:]]*true'"
+      interval: 6s
+      timeout: 8s
+      retries: 40
+      # The companion builds the swarm overlay (~60-90 s) before launching.
+      start_period: 120s

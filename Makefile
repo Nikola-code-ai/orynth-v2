@@ -17,7 +17,8 @@ PC_VENV := /tmp/orynth-pc-venv
 
 .DEFAULT_GOAL := help
 .PHONY: help base build test lint sitl-up sitl-smoke sitl-accept sitl-down \
-        hw-up hw-check hw-down swarm-smoke swarm-up swarm-down shell clean
+        hw-up hw-check hw-down swarm-smoke swarm-up swarm-down \
+        leaderfollow-smoke demo-up demo-check demo-down shell clean
 
 help: ## List available targets
 	@grep -hE '^[a-z][a-z-]*:.*## ' $(MAKEFILE_LIST) | \
@@ -66,6 +67,9 @@ hw-down: ## Tear down the hardware MAVROS stack
 swarm-smoke: ## Phase 2 acceptance gate: 5-drone SITL swarm + diamond formation
 	bash scripts/bringup/sitl_swarm.sh
 
+leaderfollow-smoke: ## Phase 2.5a gate: leader-follow demo in the SITL swarm
+	bash scripts/bringup/leaderfollow_sitl.sh
+
 swarm-up: ## Bring up the 5-drone swarm with the Gazebo GUI on screen
 	-xhost +local:root
 	$(SWARM_GUI) up --build -d
@@ -73,6 +77,15 @@ swarm-up: ## Bring up the 5-drone swarm with the Gazebo GUI on screen
 
 swarm-down: ## Tear down the swarm stack (headless + GUI)
 	$(SWARM_GUI) down -v --remove-orphans
+
+demo-up: ## Bring up this Jetson's demo drone (make demo-up DRONE_ID=<0-4>)
+	bash scripts/bringup/demo_swarm.sh up $(DRONE_ID)
+
+demo-check: ## Swarm preflight health gate (run on the leader Jetson)
+	bash scripts/bringup/demo_swarm.sh preflight
+
+demo-down: ## Tear down this Jetson's demo stack (make demo-down DRONE_ID=<0-4>)
+	bash scripts/bringup/demo_swarm.sh down $(DRONE_ID)
 
 shell: ## Interactive shell inside orynth-base (workspace mounted)
 	docker run --rm -it -v "$(CURDIR)":/workspace -w /workspace/ros2_ws $(BASE) bash

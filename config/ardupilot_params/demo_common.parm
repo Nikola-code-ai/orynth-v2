@@ -1,0 +1,56 @@
+# Orynth v2 — Phase 2.5b leader-follow hardware-demo parameter set.
+#
+# Shared (per-airframe-identical) ArduPilot Copter parameters for the demo.
+# Load this on EVERY drone, then load the matching drone_<N>.parm for that
+# airframe's MAVLink system id. See README.md for how to load and verify.
+#
+# Demo-grade values: conservative speeds, a tight geofence, every failsafe
+# armed. They are a safe starting point — not a substitute for a real tune.
+
+# ── Geofence — altitude + circle, breach -> RTL/Land ───────────────────────
+FENCE_ENABLE     1
+FENCE_TYPE       3        # bitmask: 1=max-alt, 2=circle  (3 = both)
+FENCE_ALT_MAX    30       # m  — demo ceiling
+FENCE_RADIUS     50       # m  — demo cylinder radius about the arming point
+FENCE_MARGIN     3        # m  — slow-down margin before the fence
+FENCE_ACTION     1        # 1 = RTL, then Land if RTL cannot complete
+
+# ── RC / radio failsafe — loss of the safety pilot's link -> RTL ───────────
+FS_THR_ENABLE    1        # 1 = enabled, always RTL on RC/throttle failsafe
+FS_THR_VALUE     975      # PWM below which RC is treated as lost
+
+# ── GCS / companion failsafe — loss of the MAVLink heartbeat -> RTL ────────
+FS_GCS_ENABLE    1        # 1 = enabled, RTL if the companion (MAVROS) link drops
+FS_OPTIONS       0
+
+# ── Battery failsafe — low pack -> RTL, critical -> Land ───────────────────
+BATT_LOW_VOLT    14.0     # V  — set for YOUR pack (example: 4S)
+BATT_FS_LOW_ACT  2        # 2 = RTL on low battery
+BATT_CRT_VOLT    13.2     # V  — critical threshold
+BATT_FS_CRT_ACT  1        # 1 = Land on critical battery
+
+# ── Arming — full pre-arm checks, GPS required ─────────────────────────────
+ARMING_CHECK     1        # all pre-arm checks enabled
+GPS_TYPE         1        # 1 = auto-detect
+
+# ── GUIDED / waypoint tuning — conservative demo speeds ────────────────────
+WPNAV_SPEED      300      # cm/s — 3.0 m/s horizontal in GUIDED
+WPNAV_SPEED_UP   150      # cm/s — 1.5 m/s climb
+WPNAV_SPEED_DN   100      # cm/s — 1.0 m/s descent
+WPNAV_ACCEL      100      # cm/s/s
+RTL_ALT          1500     # cm  — 15 m RTL altitude
+
+# ── Companion telemetry streams ────────────────────────────────────────────
+# MAVROS does not request MAVLink data streams; the FC must stream them
+# unconditionally. These assume the Jetson is wired to TELEM1 = SERIAL1 — set
+# the matching SERIALn_* / SRn_* if you used another port (see README.md).
+SERIAL1_PROTOCOL 2        # MAVLink2 on TELEM1
+SERIAL1_BAUD     57       # 57600 baud  (use 921 for 921600)
+SR1_EXT_STAT     10
+SR1_POSITION     10
+SR1_EXTRA1       10
+SR1_EXTRA2       10
+SR1_EXTRA3       10
+SR1_RAW_SENS     5
+SR1_RC_CHAN      5
+SR1_PARAMS       10
