@@ -17,6 +17,11 @@ setup(
     description="Backend-neutral swarm control.",
     license="Apache-2.0",
     tests_require=["pytest"],
-    # Phase 0 scaffold — no nodes yet. swarm_server lands in Phase 2.
-    entry_points={"console_scripts": []},
+    # Phase 1: sitl_mission drives the single-drone SITL acceptance run.
+    # swarm_server lands in Phase 2.
+    entry_points={
+        "console_scripts": [
+            "sitl_mission = swarm_control.sitl_mission:main",
+        ],
+    },
 )
