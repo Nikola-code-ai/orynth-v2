@@ -90,6 +90,7 @@ class MavrosAdapter(VehicleAdapter):
 
         self._state: State | None = None
         self._pose: PoseStamped | None = None
+        self._pose_mono: float | None = None
         self._global: NavSatFix | None = None
         self._goto_active = False
 
@@ -136,9 +137,7 @@ class MavrosAdapter(VehicleAdapter):
         self._land_client = node.create_client(
             CommandTOL, f"{ns}/cmd/land", callback_group=cbg
         )
-        self._log.info(
-            f"MavrosAdapter[{vehicle_id}] bound to /{ns} ({profile.value})"
-        )
+        self._log.info(f"MavrosAdapter[{vehicle_id}] bound to /{ns} ({profile.value})")
 
     # ── VehicleAdapter identity ─────────────────────────────────────────────
     @property
@@ -186,6 +185,36 @@ class MavrosAdapter(VehicleAdapter):
         if fix is None:
             return None
         return (fix.latitude, fix.longitude, fix.altitude)
+
+    @property
+    def pose_age_s(self) -> float:
+        """Seconds since the last ``local_position/pose`` message.
+
+        ``inf`` until the first pose arrives. The swarm server's leader-pose
+        watchdog (Phase 2.5a) reads this on the leader: a pose older than the
+        watchdog timeout means the formation loop has lost the leader and the
+        followers must hold position rather than chase a stale setpoint.
+        """
+        if self._pose_mono is None:
+            return math.inf
+        return time.monotonic() - self._pose_mono
+
+    @property
+    def heading_rad(self) -> float:
+        """Yaw of the last known pose as an ENU heading (radians, CCW from East).
+
+        Extracted from the ``local_position/pose`` orientation quaternion.
+        ``0.0`` until the first pose arrives. The leader-follow loop rotates
+        the formation by the leader's live heading so the followers stay
+        oriented behind it as it turns.
+        """
+        pose = self._pose
+        if pose is None:
+            return 0.0
+        q = pose.pose.orientation
+        siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+        cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        return math.atan2(siny_cosp, cosy_cosp)
 
     # ── VehicleAdapter operations ───────────────────────────────────────────
     def wait_for_connection(self, timeout_s: float = 60.0) -> bool:
@@ -285,9 +314,7 @@ class MavrosAdapter(VehicleAdapter):
         ``enable_external_control``. Returns True once the setpoint is queued
         for publication.
         """
-        self._publish_setpoint(
-            float(request.x), float(request.y), float(request.z)
-        )
+        self._publish_setpoint(float(request.x), float(request.y), float(request.z))
         return True
 
     def cancel_motion(self) -> bool:
@@ -342,6 +369,7 @@ class MavrosAdapter(VehicleAdapter):
 
     def _on_pose(self, msg: PoseStamped) -> None:
         self._pose = msg
+        self._pose_mono = time.monotonic()
 
     def _on_global(self, msg: NavSatFix) -> None:
         self._global = msg

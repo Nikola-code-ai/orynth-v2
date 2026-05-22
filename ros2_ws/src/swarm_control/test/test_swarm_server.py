@@ -18,8 +18,10 @@ from mavros_msgs.srv import CommandBool, CommandTOL, SetMode
 from rclpy.executors import MultiThreadedExecutor
 from sensor_msgs.msg import NavSatFix
 from rclpy.node import Node
+from std_msgs.msg import Float32MultiArray
 from std_srvs.srv import Trigger
-from swarm_msgs.srv import ManualGoto, SetFormation, SwarmTakeoff
+from swarm_msgs.msg import SwarmStatus
+from swarm_msgs.srv import FollowLeader, ManualGoto, SetFormation, SwarmTakeoff
 
 from swarm_control.swarm_server_node import SwarmServer
 
@@ -36,6 +38,8 @@ class FakeFcu(Node):
         self.mode = "STABILIZE"
         self.pos = [0.0, 0.0, 0.0]
         self.setpoints: list = []
+        # Phase 2.5a: switch off to simulate a leader-pose dropout.
+        self.publish_pose = True
 
         self.create_service(CommandBool, f"{ns}/cmd/arming", self._on_arming)
         self.create_service(SetMode, f"{ns}/set_mode", self._on_set_mode)
@@ -61,12 +65,13 @@ class FakeFcu(Node):
         state.mode = self.mode
         self._state_pub.publish(state)
 
-        pose = PoseStamped()
-        pose.header.frame_id = "map"
-        pose.pose.position.x = self.pos[0]
-        pose.pose.position.y = self.pos[1]
-        pose.pose.position.z = self.pos[2]
-        self._pose_pub.publish(pose)
+        if self.publish_pose:
+            pose = PoseStamped()
+            pose.header.frame_id = "map"
+            pose.pose.position.x = self.pos[0]
+            pose.pose.position.y = self.pos[1]
+            pose.pose.position.z = self.pos[2]
+            self._pose_pub.publish(pose)
 
         # All fakes share one GPS datum -> calibration yields ~zero offsets,
         # exercising the calibration path with field == local.
@@ -219,3 +224,139 @@ def test_manual_goto_service_is_advertised(swarm):
     req.target = Point(x=4.0, y=0.0, z=5.0)
     resp = _call(driver, ManualGoto, "/swarm/drone_2/manual_goto", req)
     assert resp.success, resp.message
+
+
+# ── Phase 2.5a — leader-follow ──────────────────────────────────────────────
+# Diamond slot offsets, leader-relative (forward, left) in spacing units. With
+# heading 0 the forward axis is East and the left axis is North, so a
+# follower's field target is leader_xy + (forward, left) * spacing.
+_DIAMOND_OFFSETS = {1: (-1.0, 1.0), 2: (-1.0, -1.0), 3: (-2.0, 0.0), 4: (-1.0, 0.0)}
+
+
+def _expected_followers(leader_xy, spacing):
+    lx, ly = leader_xy
+    return {
+        i: (lx + fwd * spacing, ly + left * spacing)
+        for i, (fwd, left) in _DIAMOND_OFFSETS.items()
+    }
+
+
+def _followers_settled(fakes, expected, tol: float = 0.5) -> bool:
+    return all(
+        abs(fakes[i].pos[0] - ex) < tol and abs(fakes[i].pos[1] - ey) < tol
+        for i, (ex, ey) in expected.items()
+    )
+
+
+def _engage_follow(driver, formation: str = "diamond", spacing: float = 3.0):
+    """Take the swarm off, then engage live leader-follow tracking."""
+    req = SwarmTakeoff.Request()
+    req.altitude_m = 5.0
+    assert _call(driver, SwarmTakeoff, "/swarm/takeoff", req).success
+    fl = FollowLeader.Request()
+    fl.enable = True
+    fl.formation_name = formation
+    fl.spacing_m = spacing
+    resp = _call(driver, FollowLeader, "/swarm/follow_leader", fl)
+    assert resp.success, resp.message
+
+
+def test_follow_leader_tracks_moving_leader(swarm):
+    fakes, _server, driver = swarm
+    _engage_follow(driver, "diamond", 3.0)
+
+    # Followers form up around the leader's start pose (origin).
+    start = _expected_followers((0.0, 0.0), 3.0)
+    assert _wait_until(lambda: _followers_settled(fakes, start), 5.0), (
+        "followers did not form up around the leader: "
+        + ", ".join(f"drone_{i}={fakes[i].pos}" for i in start)
+    )
+
+    # The operator flies the leader; the followers must track its live pose.
+    g = ManualGoto.Request()
+    g.target = Point(x=12.0, y=0.0, z=5.0)
+    assert _call(driver, ManualGoto, "/swarm/drone_0/manual_goto", g).success
+
+    moved = _expected_followers((12.0, 0.0), 3.0)
+    assert _wait_until(lambda: _followers_settled(fakes, moved), 6.0), (
+        "followers did not track the leader to its new pose: "
+        + ", ".join(f"drone_{i}={fakes[i].pos}" for i in moved)
+    )
+    # The leader is operator-flown — the follow loop never re-commands slot 0.
+    assert abs(fakes[0].pos[0] - 12.0) < 0.5
+
+    # Disengaging returns the swarm to a plain airborne hold.
+    off = FollowLeader.Request()
+    off.enable = False
+    resp = _call(driver, FollowLeader, "/swarm/follow_leader", off)
+    assert resp.success and "disengaged" in resp.message
+
+
+def test_follow_leader_watchdog_holds_then_recovers(swarm):
+    fakes, _server, driver = swarm
+    _engage_follow(driver, "diamond", 3.0)
+
+    expected = _expected_followers((0.0, 0.0), 3.0)
+    assert _wait_until(lambda: _followers_settled(fakes, expected), 5.0)
+    held = {i: list(fakes[i].pos) for i in expected}
+
+    statuses: list = []
+    driver.create_subscription(
+        SwarmStatus, "/swarm/status", lambda m: statuses.append(m), 5
+    )
+
+    # Dropout: the leader stops publishing pose. The watchdog must latch the
+    # emergency and the followers must hold their last formation slots.
+    fakes[0].publish_pose = False
+    assert _wait_until(
+        lambda: statuses and statuses[-1].emergency, 6.0
+    ), "watchdog did not raise the leader-pose-stale emergency"
+    for i, p in held.items():
+        assert abs(fakes[i].pos[0] - p[0]) < 0.6
+        assert abs(fakes[i].pos[1] - p[1]) < 0.6
+
+    # Recovery: pose resumes, the watchdog clears the emergency.
+    fakes[0].publish_pose = True
+    assert _wait_until(
+        lambda: statuses and not statuses[-1].emergency, 6.0
+    ), "watchdog did not clear after the leader pose recovered"
+
+
+def test_follow_leader_rejects_unknown_formation(swarm):
+    _fakes, _server, driver = swarm
+    fl = FollowLeader.Request()
+    fl.enable = True
+    fl.formation_name = "spiral"
+    fl.spacing_m = 3.0
+    resp = _call(driver, FollowLeader, "/swarm/follow_leader", fl)
+    assert not resp.success
+    assert "unknown formation" in resp.message
+
+
+def test_formation_error_topic_reports_low_drift(swarm):
+    fakes, _server, driver = swarm
+    errors: list = []
+    driver.create_subscription(
+        Float32MultiArray, "/swarm/formation_error", errors.append, 5
+    )
+    _engage_follow(driver, "diamond", 3.0)
+
+    expected = _expected_followers((0.0, 0.0), 3.0)
+    assert _wait_until(lambda: _followers_settled(fakes, expected), 5.0)
+
+    # Once the followers settle, the published per-follower error is small;
+    # the leader slot (index 0) always reads 0.0.
+    def reports_low_drift() -> bool:
+        if not errors:
+            return False
+        data = errors[-1].data
+        return (
+            len(data) == 5
+            and data[0] == 0.0
+            and all(data[i] < 0.5 for i in (1, 2, 3, 4))
+        )
+
+    assert _wait_until(reports_low_drift, 5.0), (
+        "/swarm/formation_error never reported low follower drift: "
+        f"{list(errors[-1].data) if errors else None}"
+    )

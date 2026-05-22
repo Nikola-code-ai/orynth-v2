@@ -6,11 +6,19 @@ above the adapter):
 
 * ``/swarm/takeoff``               (swarm_msgs/SwarmTakeoff) — coordinated takeoff
 * ``/swarm/land``                  (std_srvs/Trigger)        — coordinated land
-* ``/swarm/engage_formation``      (swarm_msgs/SetFormation) — hold a formation
+* ``/swarm/engage_formation``      (swarm_msgs/SetFormation) — static formation hold
+* ``/swarm/follow_leader``         (swarm_msgs/FollowLeader) — live leader-follow
 * ``/swarm/drone_<N>/manual_goto`` (swarm_msgs/ManualGoto)   — detach + fly one
 
 It streams formation-hold setpoints from a fixed timer and publishes
-``swarm_msgs/SwarmStatus`` for the GCS / Foxglove ``operator.json`` layout.
+``swarm_msgs/SwarmStatus`` plus ``/swarm/formation_error`` (per-drone
+horizontal error) for the GCS / Foxglove ``operator.json`` / ``demo.json``
+layouts.
+
+``/swarm/engage_formation`` holds the formation on a static centroid captured
+at engage time (Phase 2); ``/swarm/follow_leader`` re-places it around the
+leader's *live* pose every tick (Phase 2.5a, ADR 0008), with a watchdog that
+freezes the followers on the last good leader reference if that pose goes stale.
 
 Frames
 ------
@@ -39,9 +47,10 @@ from geometry_msgs.msg import PoseStamped
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from std_msgs.msg import Float32MultiArray
 from std_srvs.srv import Trigger
 from swarm_msgs.msg import DroneState, SwarmStatus
-from swarm_msgs.srv import ManualGoto, SetFormation, SwarmTakeoff
+from swarm_msgs.srv import FollowLeader, ManualGoto, SetFormation, SwarmTakeoff
 
 from .formation import (
     FORMATION_NAMES,
@@ -71,6 +80,14 @@ class SwarmServer(Node):
         # shared-world sim: slot i holds altitude + i*step so drones never
         # share a point in space while crossing into formation.
         self.declare_parameter("formation_alt_step_m", 0.0)
+        # Leader-follow (Phase 2.5a): how long the followers may track the
+        # leader's pose after the last update before the watchdog declares it
+        # stale and freezes the formation on the last good leader reference.
+        self.declare_parameter("leader_pose_timeout_s", 1.5)
+        # Test / demo hook — force the leader-pose watchdog regardless of the
+        # real pose age. Settable at runtime (`ros2 param set`) so the SITL
+        # acceptance gate exercises the watchdog without a real RF dropout.
+        self.declare_parameter("simulate_leader_dropout", False)
 
         self._n = int(self.get_parameter("drone_count").value)
         prefix = str(self.get_parameter("mavros_ns_prefix").value)
@@ -79,6 +96,7 @@ class SwarmServer(Node):
         self._formation_hz = float(self.get_parameter("formation_rate_hz").value)
         status_hz = float(self.get_parameter("status_rate_hz").value)
         self._alt_step = float(self.get_parameter("formation_alt_step_m").value)
+        self._leader_timeout = float(self.get_parameter("leader_pose_timeout_s").value)
 
         # Per-drone field-frame spawn offsets, flat [x0,y0,x1,y1,...].
         self.declare_parameter("field_offsets", [0.0] * (2 * self._n))
@@ -111,6 +129,10 @@ class SwarmServer(Node):
         self._formation: Formation | None = None
         self._formation_ref: tuple[float, float, float] | None = None
         self._heading_rad = 0.0
+        # Leader-follow state (Phase 2.5a). _leader_heading is the last good
+        # leader yaw; _leader_stale latches the watchdog so transitions log once.
+        self._leader_heading = 0.0
+        self._leader_stale = False
         self._manual: set[int] = set()
         self._tick = 0
 
@@ -126,6 +148,12 @@ class SwarmServer(Node):
             self._on_engage_formation,
             callback_group=self._cbg,
         )
+        self.create_service(
+            FollowLeader,
+            "/swarm/follow_leader",
+            self._on_follow_leader,
+            callback_group=self._cbg,
+        )
         for i in range(self._n):
             self.create_service(
                 ManualGoto,
@@ -135,6 +163,11 @@ class SwarmServer(Node):
             )
 
         self._status_pub = self.create_publisher(SwarmStatus, "/swarm/status", 5)
+        # Per-drone horizontal formation error — index = drone id, leader and
+        # detached drones read 0.0. Foxglove's demo.json plots the followers.
+        self._error_pub = self.create_publisher(
+            Float32MultiArray, "/swarm/formation_error", 5
+        )
         self.create_timer(
             1.0 / self._formation_hz, self._formation_tick, callback_group=self._cbg
         )
@@ -216,6 +249,69 @@ class SwarmServer(Node):
         self.get_logger().info(response.message)
         return response
 
+    def _on_follow_leader(self, request, response):
+        """Engage / disengage live leader-follow tracking (Phase 2.5a, ADR 0008).
+
+        On engage the followers (slots 1..N-1) shadow the leader's *live*
+        MAVROS pose — the formation loop re-places the diamond around drone_0
+        every tick. The leader (slot 0) stays operator-flown; the loop never
+        commands it. On disengage the followers stop tracking and the swarm
+        returns to a plain airborne hold.
+        """
+        if not request.enable:
+            with self._lock:
+                was_following = self._phase == "follow_leader"
+                if was_following:
+                    self._phase = "airborne"
+                self._formation = None
+                self._formation_ref = None
+                self._leader_stale = False
+            response.success = True
+            response.message = (
+                "leader-follow disengaged"
+                if was_following
+                else "leader-follow was not engaged"
+            )
+            self.get_logger().info(response.message)
+            return response
+
+        try:
+            formation = build_formation(
+                request.formation_name, self._n, request.spacing_m
+            )
+        except ValueError as exc:
+            response.success = False
+            response.message = str(exc)
+            self.get_logger().error(f"follow_leader rejected: {exc}")
+            return response
+
+        if not self._calibrate_offsets():
+            self.get_logger().warn(
+                "GPS unavailable on some drones — keeping configured field_offsets"
+            )
+        ref = self._field_position(0)
+        if ref is None:
+            response.success = False
+            response.message = "leader (drone_0) has no pose yet — takeoff first"
+            self.get_logger().error(response.message)
+            return response
+
+        with self._lock:
+            self._formation = formation
+            self._formation_ref = ref
+            self._leader_heading = self._adapters[0].heading_rad
+            self._leader_stale = False
+            self._manual.clear()
+            self._phase = "follow_leader"
+        response.success = True
+        response.message = (
+            f"leader-follow engaged: '{formation.name}' "
+            f"spacing={formation.spacing_m:.1f} m — {self._n - 1} followers "
+            "shadowing drone_0's live pose"
+        )
+        self.get_logger().info(response.message)
+        return response
+
     def _make_goto_cb(self, index: int):
         """Build the /swarm/drone_<index>/manual_goto handler."""
 
@@ -244,26 +340,43 @@ class SwarmServer(Node):
 
     # ── Formation control loop ──────────────────────────────────────────────
     def _formation_tick(self) -> None:
-        """Stream one hold setpoint per drone while a formation is engaged."""
+        """Stream one hold setpoint per commanded drone, every tick.
+
+        Two phases drive this loop:
+
+        * ``formation_hold`` (Phase 2) — a static centroid reference; every
+          slot, leader included, is held on the captured formation.
+        * ``follow_leader`` (Phase 2.5a) — the reference is the leader's *live*
+          pose, refreshed each tick; only the followers (slots 1..N-1) are
+          commanded, and a stale leader pose freezes the reference (watchdog).
+        """
         with self._lock:
-            if self._phase != "formation_hold" or self._formation is None:
-                return
+            phase = self._phase
             formation = self._formation
-            ref = self._formation_ref
-            heading = self._heading_rad
             manual = set(self._manual)
+            if phase not in ("formation_hold", "follow_leader") or formation is None:
+                return
             self._tick += 1
             tick = self._tick
+
+        if phase == "follow_leader":
+            ref, heading = self._follow_leader_reference()
+            first_slot = 1  # slot 0 is the operator-flown leader — never command it
+        else:
+            with self._lock:
+                ref = self._formation_ref
+                heading = self._heading_rad
+            first_slot = 0  # static hold commands the leader too
 
         if ref is None:
             return
         targets = place_formation(formation, ref, heading)
-        for i, adapter in enumerate(self._adapters):
+        for i in range(first_slot, self._n):
             if i in manual or i >= len(targets):
                 continue
             tx, ty, tz = targets[i]
             ox, oy = self._offsets[i]
-            adapter.hold_reference(
+            self._adapters[i].hold_reference(
                 FollowReferenceRequest(
                     x=tx - ox,
                     y=ty - oy,
@@ -275,10 +388,59 @@ class SwarmServer(Node):
                 )
             )
 
-        # ~1 Hz drift report — the Phase 2 acceptance gate (<0.5 m mean).
+        self._publish_formation_error(targets, manual)
+
+        # ~1 Hz drift report — the formation acceptance gate (<0.5 m mean).
         rate_ticks = max(1, int(round(self._formation_hz)))
         if tick % rate_ticks == 0:
             self._log_drift(formation, targets, manual)
+
+    def _follow_leader_reference(
+        self,
+    ) -> tuple[tuple[float, float, float] | None, float]:
+        """Resolve the live leader reference for one follow_leader tick.
+
+        Returns ``(reference, heading_rad)``. When the leader pose is fresh the
+        reference is its live field position and the last-good reference is
+        updated; when it is stale — pose older than ``leader_pose_timeout_s``,
+        or a dropout forced via the ``simulate_leader_dropout`` parameter — the
+        watchdog returns the frozen last-good reference so the followers hold
+        position instead of chasing a stale setpoint.
+        """
+        leader = self._adapters[0]
+        simulate = bool(self.get_parameter("simulate_leader_dropout").value)
+        live = self._field_position(0)
+        stale = simulate or live is None or leader.pose_age_s > self._leader_timeout
+
+        if not stale:
+            heading = leader.heading_rad
+            with self._lock:
+                self._formation_ref = live
+                self._leader_heading = heading
+                recovered = self._leader_stale
+                self._leader_stale = False
+            if recovered:
+                self.get_logger().info(
+                    "leader pose recovered — followers tracking again"
+                )
+            return live, heading
+
+        with self._lock:
+            ref = self._formation_ref
+            heading = self._leader_heading
+            first_stale = not self._leader_stale
+            self._leader_stale = True
+        if first_stale:
+            reason = (
+                "simulated dropout"
+                if simulate
+                else f"pose age {leader.pose_age_s:.1f} s"
+            )
+            self.get_logger().warn(
+                f"leader pose stale ({reason}) — followers holding position "
+                "(watchdog)"
+            )
+        return ref, heading
 
     def _log_drift(self, formation, targets, manual: set[int]) -> None:
         errors: dict[int, float] = {}
@@ -298,6 +460,24 @@ class SwarmServer(Node):
             f"{formation.name} hold | drift mean={mean:.2f}m max={worst:.2f}m | {detail}"
         )
 
+    def _publish_formation_error(self, targets, manual: set[int]) -> None:
+        """Publish per-drone horizontal formation error on /swarm/formation_error.
+
+        Index = drone id; the leader (slot 0) and any manually-detached drone
+        read 0.0. Streamed every tick so the Foxglove ``demo.json`` plot of the
+        live follower error stays smooth.
+        """
+        errors = [0.0] * self._n
+        for i in range(1, self._n):
+            if i in manual or i >= len(targets):
+                continue
+            field = self._field_position(i)
+            if field is not None:
+                errors[i] = horizontal_error(field, targets[i])
+        msg = Float32MultiArray()
+        msg.data = errors
+        self._error_pub.publish(msg)
+
     # ── Status publishing ───────────────────────────────────────────────────
     def _publish_status(self) -> None:
         msg = SwarmStatus()
@@ -306,10 +486,15 @@ class SwarmServer(Node):
         with self._lock:
             msg.formation = self._formation.name if self._formation else "none"
             msg.mission_phase = self._phase
+            watchdog = self._phase == "follow_leader" and self._leader_stale
         msg.leader_id = 0
         msg.mission_progress = 0.0
-        msg.emergency = False
-        msg.emergency_reason = ""
+        msg.emergency = watchdog
+        msg.emergency_reason = (
+            "leader pose stale — followers holding position (watchdog)"
+            if watchdog
+            else ""
+        )
         for i, adapter in enumerate(self._adapters):
             ds = DroneState()
             ds.header = msg.header
@@ -405,6 +590,7 @@ class SwarmServer(Node):
             if clear_formation:
                 self._formation = None
                 self._formation_ref = None
+                self._leader_stale = False
 
     @staticmethod
     def _summary(action: str, results: dict[int, bool]) -> str:

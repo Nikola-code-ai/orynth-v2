@@ -7,6 +7,7 @@ vehicle so the adapter's request construction, response handling, setpoint
 streaming and pose-tracking logic are all covered.
 """
 
+import math
 import threading
 import time
 
@@ -46,6 +47,10 @@ class FakeMavros(Node):
         self.takeoff_requests: list = []
         self.land_requests: list = []
         self.setpoints: list = []
+        # Leader-follow test knobs (Phase 2.5a): yaw the published pose
+        # carries, and a switch to simulate a pose dropout for the watchdog.
+        self.yaw = 0.0
+        self.publish_pose = True
 
         self.create_service(CommandBool, "mavros/cmd/arming", self._on_arming)
         self.create_service(SetMode, "mavros/set_mode", self._on_set_mode)
@@ -68,11 +73,16 @@ class FakeMavros(Node):
         state.mode = self.mode
         self._state_pub.publish(state)
 
+        if not self.publish_pose:
+            return  # simulate a pose dropout — see the watchdog test
+
         pose = PoseStamped()
         pose.header.frame_id = "map"
         pose.pose.position.x = self.pos[0]
         pose.pose.position.y = self.pos[1]
         pose.pose.position.z = self.pos[2]
+        pose.pose.orientation.z = math.sin(self.yaw / 2.0)
+        pose.pose.orientation.w = math.cos(self.yaw / 2.0)
         self._pose_pub.publish(pose)
 
     def _on_arming(self, request, response):
@@ -221,6 +231,44 @@ def test_hold_reference_streams_a_setpoint(harness):
     assert last.position.x == pytest.approx(3.0)
     assert last.position.y == pytest.approx(4.0)
     assert last.position.z == pytest.approx(5.0)
+
+
+def _wait(predicate, timeout_s: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def test_pose_age_is_fresh_while_streaming(harness):
+    """pose_age_s stays small while the FCU streams pose (Phase 2.5a)."""
+    adapter, _fake = harness
+    assert adapter.wait_for_connection(timeout_s=5.0)
+    assert _wait(lambda: adapter.local_position is not None, 5.0)
+    assert adapter.pose_age_s < 1.0
+
+
+def test_pose_age_grows_on_dropout(harness):
+    """pose_age_s climbs past the watchdog horizon once pose stops arriving."""
+    adapter, fake = harness
+    assert adapter.wait_for_connection(timeout_s=5.0)
+    assert _wait(lambda: adapter.pose_age_s < 1.0, 5.0)
+    fake.publish_pose = False  # simulate a leader-pose dropout
+    assert _wait(
+        lambda: adapter.pose_age_s > 1.5, 4.0
+    ), "pose_age_s did not grow after the FCU stopped publishing pose"
+
+
+def test_heading_rad_from_pose_quaternion(harness):
+    """heading_rad decodes ENU yaw from the pose orientation quaternion."""
+    adapter, fake = harness
+    assert adapter.wait_for_connection(timeout_s=5.0)
+    fake.yaw = math.pi / 2.0  # face North
+    assert _wait(
+        lambda: abs(adapter.heading_rad - math.pi / 2.0) < 1e-3, 5.0
+    ), f"heading_rad never reached pi/2 (got {adapter.heading_rad})"
 
 
 def test_full_mission_sequence(harness):
