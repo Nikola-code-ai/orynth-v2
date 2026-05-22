@@ -63,10 +63,15 @@ jobs:
       - name: Phase 2 nightly — 5-drone diamond formation
         run: bash scripts/bringup/sitl_swarm.sh
 
+      - name: Phase 2.5a nightly — leader-follow demo
+        run: bash scripts/bringup/leaderfollow_sitl.sh
+
       - name: Upload swarm logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: swarm-smoke-logs
-          path: /tmp/orynth_swarm_smoke.log
+          path: |
+            /tmp/orynth_swarm_smoke.log
+            /tmp/orynth_leaderfollow.log
           if-no-files-found: ignore
