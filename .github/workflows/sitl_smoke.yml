@@ -9,35 +9,57 @@ on:
 jobs:
   sitl-single-drone:
     runs-on: ubuntu-22.04
-    timeout-minutes: 12
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Docker buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build base + sitl images
-        run: |
-          docker buildx build --load -f docker/base.Dockerfile -t orynth-base:ci .
-          docker buildx build --load -f docker/sitl.Dockerfile \
-            --build-arg BASE_TAG=orynth-base:ci -t orynth-sitl:ci .
-
-      - name: Phase 1 smoke — arm, takeoff, waypoint, land
-        run: |
-          bash scripts/ci/run_sitl_smoke.sh
-
-  sitl-5-drone-swarm:
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-22.04
+    # Cold-cache budget: the sitl image compiles ArduPilot from source (~25 min).
+    # With a warm GitHub Actions layer cache the smoke run itself is <8 min
+    # (PLAN section A CI budget).
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Set up Docker buildx
         uses: docker/setup-buildx-action@v3
-      - name: Build images
+
+      - name: Build base + sitl images (GHA layer cache)
         run: |
-          docker buildx build --load -f docker/base.Dockerfile -t orynth-base:ci .
+          docker buildx build --load -f docker/base.Dockerfile \
+            --cache-from type=gha,scope=base \
+            --cache-to type=gha,mode=max,scope=base \
+            -t orynth-base:dev .
           docker buildx build --load -f docker/sitl.Dockerfile \
-            --build-arg BASE_TAG=orynth-base:ci -t orynth-sitl:ci .
+            --build-arg BASE_TAG=orynth-base:dev \
+            --cache-from type=gha,scope=sitl \
+            --cache-to type=gha,mode=max,scope=sitl \
+            -t orynth-sitl:dev .
+
+      - name: Phase 1 smoke — arm, takeoff, waypoint, land
+        run: bash scripts/ci/run_sitl_smoke.sh
+
+      - name: Upload compose logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sitl-smoke-logs
+          path: /tmp/orynth_sitl_smoke.log
+          if-no-files-found: ignore
+
+  sitl-5-drone-swarm:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build base + sitl images (GHA layer cache)
+        run: |
+          docker buildx build --load -f docker/base.Dockerfile \
+            --cache-from type=gha,scope=base \
+            --cache-to type=gha,mode=max,scope=base \
+            -t orynth-base:dev .
+          docker buildx build --load -f docker/sitl.Dockerfile \
+            --build-arg BASE_TAG=orynth-base:dev \
+            --cache-from type=gha,scope=sitl \
+            --cache-to type=gha,mode=max,scope=sitl \
+            -t orynth-sitl:dev .
       - name: Phase 2 nightly — 5-drone diamond formation
         run: |
           docker compose -f docker/compose.swarm.yaml up --abort-on-container-exit
