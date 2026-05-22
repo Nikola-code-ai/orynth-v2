@@ -1,0 +1,17 @@
+# Orynth SITL parameter overlay — layered after ArduPilot's copter.parm via
+# `arducopter --defaults` (see docker/compose.dev.yaml).
+#
+# MAVROS (ROS 2) does not request MAVLink data streams on connect, and the
+# arducopter binary streams nothing by default — so /mavros/local_position/pose
+# (and every other telemetry topic Phase 1 takeoff/waypoint depend on) stays
+# silent. Set the serial0 stream rates on the FCU itself so it streams
+# unconditionally; this is also how a companion-computer telemetry link is
+# configured on real ArduPilot hardware.
+SR0_EXT_STAT   10
+SR0_POSITION   10
+SR0_EXTRA1     10
+SR0_EXTRA2     10
+SR0_EXTRA3     10
+SR0_RAW_SENS   10
+SR0_RC_CHAN    10
+SR0_PARAMS     10

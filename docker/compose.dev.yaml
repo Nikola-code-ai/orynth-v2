@@ -1,4 +1,12 @@
-# Phase 1 single-drone dev stack: SITL + MAVROS + Foxglove bridge.
+# Phase 1 single-drone dev stack: ArduPilot SITL + MAVROS + Foxglove bridge.
+#
+#   sitl       ArduPilot SITL (arducopter) — the simulated flight controller.
+#   companion  orynth-base running sitl_single.launch.py (MAVROS + Foxglove).
+#
+# `docker compose -f docker/compose.dev.yaml up --wait` is the Phase 1
+# cold-start gate (PLAN section H): both services carry healthchecks, so
+# `--wait` blocks until MAVROS is live. Images (orynth-base:dev, orynth-sitl:dev)
+# are built by scripts/ci/run_sitl_smoke.sh / the Makefile before `up`.
 name: orynth-dev
 
 services:
@@ -6,46 +14,60 @@ services:
     build:
       context: ..
       dockerfile: docker/sitl.Dockerfile
+      args:
+        BASE_TAG: orynth-base:dev
     image: orynth-sitl:dev
     container_name: orynth-sitl
-    ports:
-      - "5760:5760/tcp"   # ArduPilot SITL master TCP
-      - "14550:14550/udp" # MAVLink UDP out
+    # --defaults loads, in order: ArduPilot's SITL copter params (FRAME_CLASS=1,
+    # ... — running the arducopter binary directly rather than via
+    # sim_vehicle.py otherwise leaves FRAME_CLASS=0 → "PreArm: Motors: Check
+    # frame class and type"); then the Orynth overlay setting serial0 data-
+    # stream rates so MAVROS receives telemetry (see docker/sitl-params.parm).
     command: >
       arducopter --model=quad --speedup=1
         --serial0=tcp:0:wait
         --instance=0
+        --defaults /home/apbuild/ardupilot/Tools/autotest/default_params/copter.parm,/opt/orynth/sitl-params.parm
     networks: [swarm-lan]
+    # No healthcheck: arducopter's serial0 accepts a single TCP client, so a
+    # polling TCP-connect probe would fight MAVROS for the slot. SITL readiness
+    # is proven instead by the companion healthcheck (a live /mavros/state
+    # requires a working MAVROS <-> SITL link).
 
-  mavros:
+  companion:
     image: orynth-base:dev
     build:
       context: ..
       dockerfile: docker/base.Dockerfile
-    container_name: orynth-mavros
-    depends_on: [sitl]
-    command: >
-      ros2 launch mavros apm.launch
-        fcu_url:=tcp://sitl:5760@
-        tgt_system:=1
-        tgt_component:=1
-    networks: [swarm-lan]
+    container_name: orynth-companion
+    # service_started is enough — the companion spends ~20 s building its
+    # overlay before launching MAVROS, which comfortably outlasts arducopter's
+    # startup. MAVROS then retries the FCU link until SITL is listening.
+    depends_on:
+      - sitl
+    volumes:
+      - ../ros2_ws:/workspace/ros2_ws:ro
+      - ../scripts:/workspace/scripts:ro
     environment:
       - ROS_DOMAIN_ID=42
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-
-  foxglove:
-    image: orynth-base:dev
-    container_name: orynth-foxglove
-    depends_on: [mavros]
+      - FCU_URL=tcp://sitl:5760@
+      - FOXGLOVE_PORT=8765
+    command: ["bash", "/workspace/scripts/bringup/sitl_companion.sh"]
     ports:
-      - "8765:8765" # Foxglove WebSocket
-    command: >
-      ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765
+      - "8765:8765"   # Foxglove bridge WebSocket
     networks: [swarm-lan]
-    environment:
-      - ROS_DOMAIN_ID=42
-      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    healthcheck:
+      # Healthy once MAVROS is publishing /mavros/state.
+      test:
+        - "CMD"
+        - "bash"
+        - "-c"
+        - "source /opt/ros/humble/setup.bash && timeout 5 ros2 topic echo --once /mavros/state >/dev/null 2>&1"
+      interval: 6s
+      timeout: 7s
+      retries: 30
+      start_period: 20s
 
 networks:
   swarm-lan:
