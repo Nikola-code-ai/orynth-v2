@@ -10,7 +10,7 @@
 
 ## Status
 
-Phase 1 — single-drone ArduPilot SITL + MAVROS + Foxglove. A backend-neutral `MavrosAdapter` flies the acceptance mission (arm → takeoff → waypoint → land); `make sitl-smoke` reproduces it. See [`WORKFLOW.md`](WORKFLOW.md) for the current checklist and `PLAN.md` § D for the full roadmap.
+Phases 0–2 and **Phase 2.5a** complete; Phase 2.5b (hardware demo) artifacts ready. A backend-neutral `MavrosAdapter` flies a five-drone ArduPilot SITL swarm — `make swarm-smoke` runs the diamond-formation gate and `make leaderfollow-smoke` the leader-follow demo, where the operator flies the leader and the followers track its live pose in formation. The hardware demo runs on the Jetson Nanos — see [`docs/runbooks/jetson_swarm_operations.md`](docs/runbooks/jetson_swarm_operations.md). See [`WORKFLOW.md`](WORKFLOW.md) for the current checklist and `PLAN.md` § D for the full roadmap.
 
 ## Quick links
 

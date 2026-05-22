@@ -15,8 +15,8 @@
 | 0 | Repo scaffold + CI + Docker baseline | **Complete** — 2026-05-21 |
 | 1 | Single-drone ArduPilot SITL + MAVROS + Foxglove | **Complete** — 2026-05-21 |
 | 2 | 5-drone SITL swarm + diamond formation | **Complete** — 2026-05-21 |
-| 2.5a | Leader-follow SITL rehearsal | Not started |
-| 2.5b | Hardware demo: leader-follow swarm | Not started |
+| 2.5a | Leader-follow SITL rehearsal | **Complete** — 2026-05-21 |
+| 2.5b | Hardware demo: leader-follow swarm | Artifacts complete — awaiting hardware flight |
 | 3 | YOLO human detection + Isaac ROS pipeline | Not started |
 | 4 | LiDAR mapping (FAST-LIO2 + OctoMap) | Not started |
 | 5 | Autonomous search + Nav2 | Not started |
@@ -308,21 +308,22 @@ runs frame-clean pure-SITL (deviation 7).
 
 ## Current focus
 
-Phases 0–2 complete. Next: the **Phase 2.5 leader-follow demo** — first
-rehearsed in the Gazebo SITL swarm (2.5a), then flown on real airframes (2.5b) —
-followed by Phase 3 (YOLO human detection).
+Phases 0–2 and **Phase 2.5a** complete; **Phase 2.5b** artifacts ready, awaiting
+the hardware flight. Next: run the 2.5b first-flight
+(`docs/runbooks/first_flight.md`) on real airframes, then Phase 3 (YOLO human
+detection).
 
 ---
 
-## Phase 2.5 — Leader-Follow Demo (planned)
+## Phase 2.5 — Leader-Follow Demo
 
 A milestone in two stages: an operator manipulates the leader (`drone_0`) and
 the followers autonomously hold a diamond relative to the leader's *live* pose,
-tracking it as it moves. **2.5a** proves this in the Gazebo SITL swarm; **2.5b**
-flies it on real airframes — so no airframe flies a behaviour the simulator has
-not already shown. Mapping, computer vision, and autonomous search stay
-post-demo (Phases 3-5, unchanged). Specced in `PLAN.md` § D, Phase 2.5;
-integration decision in [`docs/adr/0008-leader-follow-demo-integration.md`](docs/adr/0008-leader-follow-demo-integration.md).
+tracking it as it moves. **2.5a** proves this in the SITL swarm; **2.5b** flies
+it on real airframes — so no airframe flies a behaviour the simulator has not
+already shown. Mapping, computer vision, and autonomous search stay post-demo
+(Phases 3-5, unchanged). Specced in `PLAN.md` § D, Phase 2.5; integration
+decision in [`docs/adr/0008-leader-follow-demo-integration.md`](docs/adr/0008-leader-follow-demo-integration.md).
 
 **Integration** (both stages): followers fly GUIDED, commanded by
 `swarm_server_node` through `MavrosAdapter`; the formation reference is the
@@ -330,47 +331,77 @@ leader's live MAVROS pose — a small generalization of Phase 2's `formation.py`
 Native ArduPilot FOLLOW mode (`FOLL_SYSID` / `FOLL_OFS_*`) is the documented
 fallback (ADR 0008).
 
-### Phase 2.5a — Leader-Follow SITL Rehearsal
+### Phase 2.5a — checklist
 
-Leader-follow proven in the Gazebo swarm sim before any hardware flies — it
-builds directly on the Phase 2 stack already running in `compose.swarm`.
+Deliverables per `PLAN.md` § D, Phase 2.5a.
 
-First tasks:
+- [x] `swarm_msgs/FollowLeader.srv` — engage/disengage service definition
+- [x] `MavrosAdapter` — `pose_age_s` (live-pose staleness) + `heading_rad`
+      (ENU yaw from the pose quaternion) for the follow loop and its watchdog
+- [x] `swarm_server_node` — `/swarm/follow_leader` live-reference control loop:
+      the formation re-places around `drone_0`'s *live* pose every tick (slot 0
+      never commanded — the operator flies the leader)
+- [x] Follower-side leader-pose watchdog — a stale leader pose freezes the
+      followers on the last good reference (hold position) and raises the
+      `/swarm/status` emergency; `simulate_leader_dropout` param exercises it
+- [x] `/swarm/formation_error` — per-drone horizontal error topic for `demo.json`
+- [x] `scripts/bringup/leaderfollow_sitl.sh` — Phase 2.5a acceptance gate;
+      `Makefile` `leaderfollow-smoke`; nightly `sitl_smoke.yml` step
+- [x] Integration tests — leader-follow tracking, watchdog hold/recover,
+      formation-error topic, adapter pose-age/heading (`colcon test` green:
+      55 tests, 0 failures)
+- [x] Acceptance gate passed — see "Phase 2.5a acceptance results" below
 
-- `swarm_server_node` live-reference mode — `/swarm/follow_leader`
-  (engage/disengage) whose control loop reads the leader's *live* pose each
-  tick, not the static centroid `/swarm/engage_formation` captures.
-- Follower-side leader-pose watchdog — stale leader pose → hold / LOITER.
-- Sim leader-input path — the operator moves `drone_0` via
-  `/swarm/drone_0/manual_goto` (or RC-into-SITL); the followers track it.
+### Phase 2.5a acceptance results (2026-05-21)
 
-Acceptance: in the Gazebo swarm, the operator moves the leader and the four
-followers track the diamond live <0.5 m mean horizontal error; the watchdog
-holds a follower on a simulated leader-pose dropout. Recorded
-`accept/leaderfollow_sitl.mcap`.
+Verified locally on an amd64 workstation via `make test` + `make
+leaderfollow-smoke`:
 
-### Phase 2.5b — Hardware Demo
+| Gate | Result |
+|---|---|
+| `colcon build && colcon test` (unit gate) | Pass — 55 tests, 0 errors, 0 failures |
+| `docker compose up --wait` cold-start (5 SITL + 5 MAVROS + server) | Pass — stack healthy in 13 s |
+| `/swarm/takeoff` — coordinated 5-drone takeoff to 5 m | Pass — all 5 airborne |
+| `/swarm/follow_leader` engage (diamond, 4 m) | Pass — 4 followers shadowing |
+| Operator flies the leader (2 legs via `manual_goto`); followers track | Pass — **0.05 m worst settled drift** (gate: <0.5 m) |
+| Leader-pose watchdog on a simulated dropout | Pass — followers held position |
+| `/swarm/follow_leader` disengage + `/swarm/land` | Pass — all 5 landed |
 
-The first **on-hardware** flight — the same leader-follow on real airframes.
+The gate runs headless pure-SITL (consistent with deviation 7); `make swarm-up`
+gives the on-screen Gazebo version of the same demo.
 
-Entry criteria (before any motor spins):
+### Phase 2.5b — checklist
 
-- Phase 2.5a passed in SITL.
-- Condensed safety gate (a subset of the Phase 6 HIL checklist): per-airframe
-  compass/accel calibration, props-off GUIDED arm test, geofence + RC-loss
-  failsafe via QGC, single-drone manual hover for the leader and each follower.
+Deliverables per `PLAN.md` § D, Phase 2.5b.
 
-First tasks:
+- [x] `docker/compose.demo.yaml` — per-Jetson hardware bringup, `DRONE_ID`-
+      namespaced, host networking for the cross-Jetson DDS LAN
+- [x] `swarm_bringup/launch/hw_drone.launch.py` + `scripts/bringup/demo_companion.sh`
+      — namespaced single-drone hardware bringup; the leader's Jetson also hosts
+      the Foxglove bridge + `swarm_server`
+- [x] `scripts/bringup/demo_swarm.sh` — operator bringup wrapper + swarm-wide
+      preflight gate (blocks until every drone reports a live FC link, EKF
+      global origin, and battery > 90%)
+- [x] `config/ardupilot_params/` — per-airframe demo params (geofence, RC/GCS/
+      battery failsafes, GUIDED tuning, distinct `SYSID_THISMAV`) + README
+- [x] `docs/runbooks/first_flight.md` — demo flight runbook (condensed safety
+      gate, roles, sequence, abort triggers, sign-off)
+- [x] `swarm_bringup/config/demo.json` — Foxglove demo layout (poses,
+      `/swarm/status`, live per-follower formation error)
+- [x] `docs/runbooks/jetson_swarm_operations.md` — Jetson setup + single-drone /
+      swarm control guide
+- [x] `Makefile` `demo-up` / `demo-check` / `demo-down`
+- [ ] **Acceptance — the hardware flight.** Pending real airframes: manually-
+      piloted leader, ≥2 followers (target 4) tracking a live leader-relative
+      formation <2 m mean error for ≥60 s of leader motion; watchdog holds a
+      follower on a simulated link drop; coordinated land. Recorded
+      `accept/demo_leaderfollow.mcap` + flight video; safety-pilot + maintainer
+      sign-off on `first_flight.md` — no CI gate (hardware).
 
-- `scripts/bringup/demo_swarm.sh` + per-airframe params in
-  `config/ardupilot_params/`.
-- `docs/runbooks/first_flight.md` demo runbook; `demo.json` Foxglove layout.
-
-Acceptance gate (`PLAN.md` § D): manually-piloted leader, ≥2 followers (target 4)
-tracking a live leader-relative formation <2 m mean horizontal error for ≥60 s
-of leader motion; watchdog holds a follower on a simulated link drop;
-coordinated land. Recorded `accept/demo_leaderfollow.mcap` + flight video;
-safety-pilot + maintainer sign-off — no CI gate (hardware).
+Entry criteria before any motor spins: Phase 2.5a passed in SITL (done) + the
+condensed safety gate in `first_flight.md` § 2 (per-airframe calibration,
+props-off GUIDED arm test, geofence + RC-loss failsafe via QGC, single-drone
+manual hover for the leader and each follower).
 
 ---
 
@@ -410,3 +441,18 @@ safety-pilot + maintainer sign-off — no CI gate (hardware).
   § H and this section restructured; status table now lists 2.5a + 2.5b. The
   leader-follow code (`/swarm/follow_leader` live-reference mode + watchdog)
   moves from a hardware-only task to the SITL-first 2.5a stage.
+- **2026-05-21** — Phase 2.5a implementation pass: leader-follow in the SITL
+  swarm. `FollowLeader.srv`, `MavrosAdapter` live-pose age + heading,
+  `swarm_server_node` `/swarm/follow_leader` live-reference loop + leader-pose
+  watchdog + `/swarm/formation_error`, `leaderfollow_sitl.sh` gate + CI step.
+  Acceptance gate passed: 5-drone takeoff, operator-flown leader, 4 followers
+  tracking at 0.05 m worst settled drift (gate <0.5 m), watchdog hold on a
+  simulated dropout; 55 unit tests green. Phase 2.5a marked complete.
+- **2026-05-21** — Phase 2.5b artifacts pass: the hardware leader-follow demo.
+  `compose.demo.yaml` (per-Jetson, `DRONE_ID`-namespaced, host networking),
+  `hw_drone.launch.py` + `demo_companion.sh`, `demo_swarm.sh` (bringup +
+  preflight health gate), `config/ardupilot_params/` per-airframe demo params,
+  `demo.json` Foxglove layout, `docs/runbooks/first_flight.md` (flight runbook)
+  and `docs/runbooks/jetson_swarm_operations.md` (Jetson setup + control guide).
+  All artifacts complete and validated; the 2.5b acceptance is the hardware
+  flight itself, pending real airframes.

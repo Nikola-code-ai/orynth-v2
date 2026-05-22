@@ -271,8 +271,8 @@ the SITL launcher / world builder are all unit-tested with no SITL:
 $ make test
 ```
 
-Expected: `48 tests, 0 errors, 0 failures` (the cumulative suite — 22 at
-Phase 1, 48 once the Phase 2 `swarm_control` + `swarm_sim` tests land).
+Expected: `48 tests, 0 errors, 0 failures` at Phase 2 (the cumulative suite —
+22 at Phase 1, 48 at Phase 2; the Phase 2.5a leader-follow tests raise it to 55).
 
 ### 2.3 — Run the swarm acceptance gate
 
@@ -338,6 +338,85 @@ The five-drone smoke runs nightly only; PR CI stays single-drone for the
 
 ---
 
+## Phase 2.5 — Leader-Follow Demo
+
+A two-stage milestone (PLAN § D, Phase 2.5; ADR 0008): **2.5a** rehearses
+leader-follow in the SITL swarm; **2.5b** flies it on real airframes. The
+operator manipulates the leader (`drone_0`); the followers shadow its *live*
+pose, holding a diamond and tracking it as it moves.
+
+> **Shortcut:** `make leaderfollow-smoke` runs the 2.5a acceptance gate.
+
+### 2.5a.1 — Unit gate
+
+```bash
+$ make test
+```
+
+Expected: `55 tests, 0 errors, 0 failures` — the cumulative suite; the Phase
+2.5a leader-follow + watchdog tests bring it from 48 to 55.
+
+### 2.5a.2 — Run the leader-follow acceptance gate
+
+```bash
+$ make leaderfollow-smoke    # or: bash scripts/bringup/leaderfollow_sitl.sh
+```
+
+Cold-starts the headless five-drone swarm, then drives `swarm_server`:
+`/swarm/takeoff` → `/swarm/follow_leader` (engage) → flies the leader with
+`/swarm/drone_0/manual_goto` while the four followers track the diamond →
+exercises the leader-pose watchdog → disengage → `/swarm/land`. Asserts the
+settled follower drift stays under 0.5 m mean and that the watchdog engages on
+a simulated leader-pose dropout. Exit 0 = pass.
+
+### 2.5a.3 — Drive leader-follow by hand
+
+With the swarm up (`make swarm-up` for the Gazebo GUI):
+
+```bash
+$ docker compose -f docker/compose.swarm.yaml exec companion bash -lc '
+    source /opt/ros/humble/setup.bash && source /opt/overlay/setup.bash
+    ros2 service call /swarm/takeoff swarm_msgs/srv/SwarmTakeoff "{altitude_m: 5.0}"
+    ros2 service call /swarm/follow_leader swarm_msgs/srv/FollowLeader \
+      "{enable: true, formation_name: diamond, spacing_m: 6.0}"
+    ros2 service call /swarm/drone_0/manual_goto swarm_msgs/srv/ManualGoto \
+      "{target: {x: 15.0, y: 0.0, z: 5.0}}"
+    ros2 service call /swarm/follow_leader swarm_msgs/srv/FollowLeader "{enable: false}"
+    ros2 service call /swarm/land std_srvs/srv/Trigger "{}"
+  '
+```
+
+The watchdog is exercised without a real dropout via `ros2 param set
+/swarm_server simulate_leader_dropout true` (then `false`). Foxglove's
+`demo.json` layout shows the live per-follower formation error.
+
+### 2.5b — Hardware demo
+
+The on-hardware flight runs on the Jetson Nanos — one drone per Jetson. Full
+setup and the `/swarm/*` control surface are in
+`docs/runbooks/jetson_swarm_operations.md`; the flight procedure (condensed
+safety gate, roles, abort triggers, sign-off) is `docs/runbooks/first_flight.md`.
+Per-Jetson summary:
+
+```bash
+$ make demo-up DRONE_ID=0      # leader Jetson — MAVROS + Foxglove + swarm_server
+$ make demo-up DRONE_ID=1      # follower Jetson — MAVROS  (repeat for 2..4)
+$ make demo-check              # swarm-wide preflight health gate (leader Jetson)
+$ make demo-down DRONE_ID=<N>  # teardown, per Jetson
+```
+
+### 2.5 — What CI runs
+
+| Workflow | Reproduces locally as |
+|---|---|
+| `sitl_smoke.yml` (`sitl-5-drone-swarm`, nightly) | step 2.5a.2 (`make leaderfollow-smoke`) |
+| `unit.yml` | step 2.5a.1 (`make test`) |
+
+The leader-follow gate runs in the same nightly job as the Phase 2 swarm smoke.
+2.5b is a hardware flight — no CI gate.
+
+---
+
 ## Appendix A — How the Phase 0 pins were originally resolved
 
 These produced the values committed in `digests.lock`, `orynth.repos`, and
@@ -386,11 +465,8 @@ $ git push origin main
 
 ## Later phases
 
-The Phase 2.5 leader-follow demo and later command sequences are added here as
-each lands. Phase 2.5 runs in two stages: **2.5a** rehearses leader-follow in
-the Gazebo SITL swarm — the `compose.swarm` stack from § Phase 2 plus a
-`/swarm/follow_leader` live-tracking mode, so the operator moves the leader and
-the followers track the diamond live; **2.5b** flies the same on real
-airframes. See `docs/runbooks/` for operational runbooks (`sitl_swarm_dev.md`,
-the demo's `first_flight.md`, …), `WORKFLOW.md` for current phase status, and
-`PLAN.md` § D / `docs/adr/0008-leader-follow-demo-integration.md` for the spec.
+Phase 3+ command sequences (YOLO human detection, LiDAR mapping, autonomous
+search, HIL, field deployment) are added here as each lands. See
+`docs/runbooks/` for operational runbooks (`sitl_swarm_dev.md`,
+`jetson_swarm_operations.md`, `first_flight.md`), `WORKFLOW.md` for current
+phase status, and `PLAN.md` § D for the roadmap.
