@@ -1,0 +1,13 @@
+# Engage or disengage live leader-follow formation tracking — Phase 2.5a (ADR 0008).
+#
+# Slot 0 (drone_0) is the operator-flown leader; followers 1..N-1 shadow the
+# leader's *live* MAVROS pose, re-placing the formation around it every control
+# tick. The formation heading tracks the leader's live yaw, so the diamond
+# stays oriented with the leader as it turns. A follower-side watchdog holds
+# position if the leader pose goes stale (PLAN section D, Phase 2.5a).
+bool enable
+string formation_name      # diamond | vee | column | line  (used when enable=true)
+float32 spacing_m          # metres between adjacent slots   (used when enable=true)
+---
+bool success
+string message

@@ -15,6 +15,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   srv/SetFormation.srv
   srv/SwarmTakeoff.srv
   srv/ManualGoto.srv
+  srv/FollowLeader.srv
   srv/AssignSearchArea.srv
   action/FlySwarmMission.action
   action/SearchArea.action
