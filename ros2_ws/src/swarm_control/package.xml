@@ -13,6 +13,7 @@
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>mavros_msgs</depend>
+  <depend>std_srvs</depend>
   <depend>swarm_msgs</depend>
 
   <test_depend>ament_copyright</test_depend>

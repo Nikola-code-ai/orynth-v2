@@ -17,6 +17,12 @@ setup(
     description="ArduPilot SITL multi-instance launcher.",
     license="Apache-2.0",
     tests_require=["pytest"],
-    # Phase 0 scaffold — sitl_launcher lands in Phase 2.
-    entry_points={"console_scripts": []},
+    # Phase 2: multi-instance SITL launcher + Gazebo swarm-world generator.
+    # Both are pure-Python and also run directly (python -m swarm_sim.<mod>).
+    entry_points={
+        "console_scripts": [
+            "sitl_launcher = swarm_sim.sitl_launcher:main",
+            "world_builder = swarm_sim.world_builder:main",
+        ],
+    },
 )

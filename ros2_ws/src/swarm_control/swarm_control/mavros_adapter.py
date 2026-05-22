@@ -20,7 +20,9 @@ import rclpy
 from geometry_msgs.msg import PoseStamped
 from mavros_msgs.msg import PositionTarget, State
 from mavros_msgs.srv import CommandBool, CommandTOL, SetMode
+from rclpy.callback_groups import CallbackGroup
 from rclpy.node import Node
+from sensor_msgs.msg import NavSatFix
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -64,6 +66,7 @@ class MavrosAdapter(VehicleAdapter):
         mavros_ns: str = "mavros",
         profile: PlatformProfile = PlatformProfile.ARDUPILOT_SITL,
         service_timeout_s: float = 30.0,
+        callback_group: CallbackGroup | None = None,
     ) -> None:
         self._node = node
         self._vehicle_id = vehicle_id
@@ -87,6 +90,7 @@ class MavrosAdapter(VehicleAdapter):
 
         self._state: State | None = None
         self._pose: PoseStamped | None = None
+        self._global: NavSatFix | None = None
         self._goto_active = False
 
         ns = mavros_ns.strip("/")
@@ -96,19 +100,42 @@ class MavrosAdapter(VehicleAdapter):
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
         )
+        # A shared callback group lets a MultiThreadedExecutor service many
+        # adapters (and their blocking calls) concurrently — the swarm server
+        # passes a ReentrantCallbackGroup. None keeps Phase 1 behaviour.
+        cbg = callback_group
         self._state_sub = node.create_subscription(
-            State, f"{ns}/state", self._on_state, sensor_qos
+            State, f"{ns}/state", self._on_state, sensor_qos, callback_group=cbg
         )
         self._pose_sub = node.create_subscription(
-            PoseStamped, f"{ns}/local_position/pose", self._on_pose, sensor_qos
+            PoseStamped,
+            f"{ns}/local_position/pose",
+            self._on_pose,
+            sensor_qos,
+            callback_group=cbg,
+        )
+        self._global_sub = node.create_subscription(
+            NavSatFix,
+            f"{ns}/global_position/global",
+            self._on_global,
+            sensor_qos,
+            callback_group=cbg,
         )
         self._setpoint_pub = node.create_publisher(
             PositionTarget, f"{ns}/setpoint_raw/local", 10
         )
-        self._arm_client = node.create_client(CommandBool, f"{ns}/cmd/arming")
-        self._mode_client = node.create_client(SetMode, f"{ns}/set_mode")
-        self._takeoff_client = node.create_client(CommandTOL, f"{ns}/cmd/takeoff")
-        self._land_client = node.create_client(CommandTOL, f"{ns}/cmd/land")
+        self._arm_client = node.create_client(
+            CommandBool, f"{ns}/cmd/arming", callback_group=cbg
+        )
+        self._mode_client = node.create_client(
+            SetMode, f"{ns}/set_mode", callback_group=cbg
+        )
+        self._takeoff_client = node.create_client(
+            CommandTOL, f"{ns}/cmd/takeoff", callback_group=cbg
+        )
+        self._land_client = node.create_client(
+            CommandTOL, f"{ns}/cmd/land", callback_group=cbg
+        )
         self._log.info(
             f"MavrosAdapter[{vehicle_id}] bound to /{ns} ({profile.value})"
         )
@@ -132,6 +159,33 @@ class MavrosAdapter(VehicleAdapter):
     def armed(self) -> bool:
         """True while the FCU reports the vehicle armed."""
         return self._state is not None and self._state.armed
+
+    @property
+    def mode(self) -> str:
+        """Current FCU flight-mode string (empty until first /mavros/state)."""
+        return self._state.mode if self._state is not None else ""
+
+    @property
+    def local_position(self) -> tuple[float, float, float] | None:
+        """Last known local ENU position ``(x, y, z)`` in metres, or None."""
+        pose = self._pose
+        if pose is None:
+            return None
+        p = pose.pose.position
+        return (p.x, p.y, p.z)
+
+    @property
+    def global_position(self) -> tuple[float, float, float] | None:
+        """Last known global fix ``(lat_deg, lon_deg, alt_m)``, or None.
+
+        The swarm server uses this to calibrate each drone's offset within a
+        shared field frame — drones in independent EKF frames are otherwise
+        not directly comparable.
+        """
+        fix = self._global
+        if fix is None:
+            return None
+        return (fix.latitude, fix.longitude, fix.altitude)
 
     # ── VehicleAdapter operations ───────────────────────────────────────────
     def wait_for_connection(self, timeout_s: float = 60.0) -> bool:
@@ -222,10 +276,19 @@ class MavrosAdapter(VehicleAdapter):
         return False
 
     def hold_reference(self, request: FollowReferenceRequest) -> bool:
-        """Follow a moving reference frame — formation hold (Phase 2)."""
-        raise NotImplementedError(
-            "hold_reference (formation follow) lands in Phase 2 — PLAN section D"
+        """Publish one formation-hold setpoint at the reference point.
+
+        Non-blocking by design: ArduPilot GUIDED tracks the most recent
+        position target, so a *moving* reference is followed by streaming this
+        call at a fixed rate (the swarm server's formation loop does exactly
+        that). The vehicle must already be in GUIDED — see
+        ``enable_external_control``. Returns True once the setpoint is queued
+        for publication.
+        """
+        self._publish_setpoint(
+            float(request.x), float(request.y), float(request.z)
         )
+        return True
 
     def cancel_motion(self) -> bool:
         """Stop an in-progress ``go_to``. Best-effort; always returns True."""
@@ -261,6 +324,7 @@ class MavrosAdapter(VehicleAdapter):
             (self._node.destroy_publisher, self._setpoint_pub),
             (self._node.destroy_subscription, self._state_sub),
             (self._node.destroy_subscription, self._pose_sub),
+            (self._node.destroy_subscription, self._global_sub),
             (self._node.destroy_client, self._arm_client),
             (self._node.destroy_client, self._mode_client),
             (self._node.destroy_client, self._takeoff_client),
@@ -278,6 +342,9 @@ class MavrosAdapter(VehicleAdapter):
 
     def _on_pose(self, msg: PoseStamped) -> None:
         self._pose = msg
+
+    def _on_global(self, msg: NavSatFix) -> None:
+        self._global = msg
 
     def _distance_to(self, x: float, y: float, z: float) -> float:
         """Euclidean distance from the last known pose to ``(x, y, z)``."""

@@ -1,0 +1,92 @@
+{
+  "configById": {
+    "3D!scene": {
+      "cameraState": {
+        "distance": 35,
+        "perspective": true,
+        "phi": 58,
+        "target": [0, 0, 0],
+        "targetOffset": [0, 0, 0],
+        "thetaOffset": 45,
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-none",
+      "followTf": "map",
+      "scene": { "enableStats": false },
+      "transforms": {},
+      "topics": {
+        "/drone_0/mavros/local_position/pose": { "visible": true },
+        "/drone_1/mavros/local_position/pose": { "visible": true },
+        "/drone_2/mavros/local_position/pose": { "visible": true },
+        "/drone_3/mavros/local_position/pose": { "visible": true },
+        "/drone_4/mavros/local_position/pose": { "visible": true }
+      },
+      "layers": {},
+      "publish": { "type": "point", "poseTopic": "/move_base_simple/goal" }
+    },
+    "RawMessages!status": {
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/swarm/status"
+    },
+    "Plot!altitude": {
+      "title": "Drone altitude (local z)",
+      "paths": [
+        {
+          "value": "/drone_0/mavros/local_position/pose.pose.position.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "drone_0 (leader)"
+        },
+        {
+          "value": "/drone_1/mavros/local_position/pose.pose.position.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "drone_1"
+        },
+        {
+          "value": "/drone_2/mavros/local_position/pose.pose.position.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "drone_2"
+        },
+        {
+          "value": "/drone_3/mavros/local_position/pose.pose.position.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "drone_3"
+        },
+        {
+          "value": "/drone_4/mavros/local_position/pose.pose.position.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "drone_4"
+        }
+      ],
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": { "speed": 1 },
+  "layout": {
+    "direction": "row",
+    "first": "3D!scene",
+    "second": {
+      "direction": "column",
+      "first": "RawMessages!status",
+      "second": "Plot!altitude",
+      "splitPercentage": 52
+    },
+    "splitPercentage": 60
+  }
+}

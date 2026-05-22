@@ -1,0 +1,6 @@
+# Coordinated takeoff for every active swarm vehicle to a common altitude.
+# Served by swarm_server_node as /swarm/takeoff (PLAN section D, Phase 2).
+float32 altitude_m
+---
+bool success
+string message

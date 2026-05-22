@@ -8,12 +8,15 @@
 # Run `make` (or `make help`) for the target list.
 
 COMPOSE := docker compose -f docker/compose.dev.yaml
+SWARM     := docker compose -f docker/compose.swarm.yaml
+SWARM_GUI := docker compose -f docker/compose.swarm.yaml -f docker/compose.swarm.gui.yaml
 BASE    := orynth-base:dev
 RUN_WS  := docker run --rm -v "$(CURDIR)":/workspace -w /workspace/ros2_ws $(BASE)
 PC_VENV := /tmp/orynth-pc-venv
 
 .DEFAULT_GOAL := help
-.PHONY: help base build test lint sitl-up sitl-smoke sitl-accept sitl-down shell clean
+.PHONY: help base build test lint sitl-up sitl-smoke sitl-accept sitl-down \
+        swarm-smoke swarm-up swarm-down shell clean
 
 help: ## List available targets
 	@grep -hE '^[a-z][a-z-]*:.*## ' $(MAKEFILE_LIST) | \
@@ -48,6 +51,17 @@ sitl-accept: ## Run the smoke test and record accept/phase1.mcap
 
 sitl-down: ## Tear down the SITL stack
 	$(COMPOSE) down -v --remove-orphans
+
+swarm-smoke: ## Phase 2 acceptance gate: 5-drone SITL swarm + diamond formation
+	bash scripts/bringup/sitl_swarm.sh
+
+swarm-up: ## Bring up the 5-drone swarm with the Gazebo GUI on screen
+	-xhost +local:root
+	$(SWARM_GUI) up --build -d
+	@echo "Swarm up — Gazebo GUI on screen; Foxglove: connect to ws://localhost:8765"
+
+swarm-down: ## Tear down the swarm stack (headless + GUI)
+	$(SWARM_GUI) down -v --remove-orphans
 
 shell: ## Interactive shell inside orynth-base (workspace mounted)
 	docker run --rm -it -v "$(CURDIR)":/workspace -w /workspace/ros2_ws $(BASE) bash

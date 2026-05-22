@@ -5,11 +5,12 @@
 ## Context
 
 After Phase 2 (5-drone SITL swarm + diamond formation) the project runs a
-deliberately minimal **hardware demo** — Phase 2.5 in `PLAN.md` § D. An operator
-manually manipulates the leader (`drone_0`) and the follower drones physically
-hold a formation relative to it. The demo proves the swarm works on real
-airframes before the heavier perception and mapping phases; mapping and computer
-vision stay post-demo.
+deliberately minimal **leader-follow demo** — Phase 2.5 in `PLAN.md` § D. An
+operator manipulates the leader (`drone_0`) and the follower drones hold a
+formation relative to it. The milestone runs in two stages: **2.5a** rehearses
+leader-follow in the Gazebo SITL swarm; **2.5b** flies the same on real
+airframes. The demo proves the swarm works before the heavier perception and
+mapping phases; mapping and computer vision stay post-demo.
 
 It needs a leader-follow mechanism. ArduPilot offers two viable paths:
 

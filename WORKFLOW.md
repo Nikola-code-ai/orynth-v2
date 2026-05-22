@@ -14,8 +14,9 @@
 |---|---|---|
 | 0 | Repo scaffold + CI + Docker baseline | **Complete** — 2026-05-21 |
 | 1 | Single-drone ArduPilot SITL + MAVROS + Foxglove | **Complete** — 2026-05-21 |
-| 2 | 5-drone SITL swarm + diamond formation | Not started |
-| 2.5 | Hardware demo: leader-follow swarm | Not started |
+| 2 | 5-drone SITL swarm + diamond formation | **Complete** — 2026-05-21 |
+| 2.5a | Leader-follow SITL rehearsal | Not started |
+| 2.5b | Hardware demo: leader-follow swarm | Not started |
 | 3 | YOLO human detection + Isaac ROS pipeline | Not started |
 | 4 | LiDAR mapping (FAST-LIO2 + OctoMap) | Not started |
 | 5 | Autonomous search + Nav2 | Not started |
@@ -132,6 +133,16 @@ Recorded so the team can ratify or reverse them.
    MAVROS-only (ADR 0002). The enum is now `ARDUPILOT_SITL` +
    `ARDUPILOT_HARDWARE`.
 
+7. **The Phase 2 acceptance gate runs pure-SITL, not Gazebo.** Deviation 4
+   anticipated Phase 2 "runs Gazebo". The headless acceptance gate
+   (`sitl_swarm.sh` / the nightly CI job) runs ArduPilot's built-in `quad`
+   physics: all SITL share one home so every drone's local frame coincides
+   (frame-clean formation math), it is fast, and it needs no GPU/X. Gazebo
+   Harmonic is wired as the *on-screen* backend — `docker/compose.swarm.gui.yaml`
+   / `make swarm-up` — running the identical `swarm_server` / formation stack
+   with distinct-home SITL and GPS-calibrated field offsets. Both are Phase 2
+   deliverables; the gate simply does not depend on Gazebo rendering.
+
 ---
 
 ## Phase 0 acceptance results (2026-05-21)
@@ -222,60 +233,142 @@ Verified locally on an amd64 workstation via `make test` + `make sitl-accept`:
 | Land + disarm | Pass — disarmed ~13 s after command |
 | Acceptance bag | Pass — `accept/phase1.mcap` recorded (`/mavros/state`, `local_position/pose`, `setpoint_raw/local`) |
 
+## Phase 2 — checklist
+
+Deliverables per `PLAN.md` § D, Phase 2.
+
+- [x] `swarm_sim/sitl_launcher.py` — multi-instance ArduPilot SITL launcher
+      (ports `5760+N*10`, per-instance `SYSID_THISMAV`, pure-SITL or Gazebo)
+- [x] `swarm_sim/world_builder.py` — generates the N-drone Gazebo Harmonic
+      world from `iris_with_ardupilot` (per-model FDM ports)
+- [x] `swarm_control/formation.py` — reference-agnostic formation geometry
+      (diamond / vee / column / line)
+- [x] `MavrosAdapter.hold_reference` — formation-hold setpoint streaming;
+      `global_position` for the GPS-calibrated common field frame
+- [x] `swarm_control/swarm_server_node.py` — 5-drone orchestrator: services
+      `/swarm/takeoff|land|engage_formation`, `/swarm/drone_<N>/manual_goto`,
+      formation control loop, `SwarmStatus` publisher
+- [x] `swarm_msgs` — `SwarmTakeoff` + `ManualGoto` service definitions
+- [x] `swarm_bringup/launch/sitl_swarm.launch.py` — 5× MAVROS + Foxglove +
+      swarm_server
+- [x] `docker/compose.swarm.yaml` (+ `compose.swarm.gui.yaml` GUI overlay) and
+      the `swarm_sim` / `swarm_companion` bringup scripts
+- [x] `scripts/bringup/sitl_swarm.sh` — Phase 2 acceptance gate runner
+- [x] `swarm_bringup/config/operator.json` — Foxglove layout showing all 5
+- [x] unit tests — formation geometry + `swarm_server` (5-fake-MAVROS
+      integration) + `swarm_sim` (`colcon test` green: 48 tests, 0 failures)
+- [x] `Makefile` `swarm-smoke` / `swarm-up` / `swarm-down`; `sitl_smoke.yml`
+      nightly `sitl-5-drone-swarm` job wired to `sitl_swarm.sh`
+- [x] Acceptance gate — 5-drone takeoff, diamond hold, land; see "Phase 2
+      acceptance results" below
+
+### Phase 2 fixes applied (acceptance pass)
+
+Found while running the acceptance gate end to end:
+
+| Problem | Fix |
+|---|---|
+| `sitl_launcher.main()` read the module-global `_stop` before assigning it → `UnboundLocalError` | Declared `global _stop` in `main()` |
+| `swarm_sim.sh` `cd`'d to `ros2_ws/src`, so `python -m swarm_sim.*` resolved a stale colcon `install/` tree | `cd` to the package root `src/swarm_sim` (cwd = `sys.path[0]`) |
+| Companion overlay built with `--packages-select`; an ament_cmake package's `exec_depend`s must be built, so `swarm_bringup` failed its colcon cmake check | Build the dependency closure with `--packages-up-to swarm_bringup` |
+| All five MAVROS shared MAVLink system id 1 → a shared `/uas1` router prefix → a node-name collision silently killed one MAVROS | Per-instance `SYSID_THISMAV = N+1` (`sitl_launcher`) + matching `tgt_system` (`sitl_swarm.launch.py`) — PLAN § G's SYSID mitigation |
+
+## How to verify Phase 2
+
+```bash
+# Unit gate — formation, swarm_server, swarm_sim; no SITL
+make test
+
+# Acceptance — headless 5-drone SITL swarm (builds images on first run)
+make swarm-smoke
+
+# On-screen — 5 drones in Gazebo Harmonic, GUI on the host display
+make swarm-up      # then connect Foxglove to ws://localhost:8765
+make swarm-down
+```
+
+CI runs `unit.yml` (`colcon test`) on every PR and `sitl_smoke.yml`
+(`sitl-5-drone-swarm`) nightly.
+
+## Phase 2 acceptance results (2026-05-21)
+
+Verified locally on an amd64 workstation via `make test` + `make swarm-smoke`:
+
+| Gate | Result |
+|---|---|
+| `colcon build && colcon test` (unit gate) | Pass — 48 tests, 0 errors, 0 failures |
+| `docker compose up --wait` cold-start (5 SITL + 5 MAVROS + server) | Pass — stack healthy in 12 s (gate: <60 s) |
+| `/swarm/takeoff` — coordinated 5-drone takeoff to 5 m | Pass — all 5 armed + airborne |
+| `/swarm/engage_formation` diamond, spacing 4 m | Pass — diamond latched |
+| Diamond formation hold, 60 s | Pass — **0.02 m mean drift** per follower (gate: <0.5 m) |
+| `/swarm/land` — coordinated land + disarm | Pass — all 5 landed |
+
+Gazebo Harmonic is the on-screen backend (`make swarm-up`); the gate itself
+runs frame-clean pure-SITL (deviation 7).
+
 ## Current focus
 
-Phase 1 complete. Next: Phase 2 (5-drone SITL swarm + diamond formation), then
-the Phase 2.5 hardware-demo milestone — leader-follow swarm on real airframes.
-
-## Next — Phase 2 entry
-
-Phase 2 (5-drone SITL swarm + diamond formation) — first tasks:
-
-- `swarm_sim/sitl_launcher.py` — multi-instance SITL at offset spawn points,
-  per-instance ports (PLAN § I, critical file #5).
-- `swarm_server_node` exposing `/swarm/takeoff|land|engage_formation`.
-- Port + extend `formation.py` — build it **reference-agnostic** (a static
-  centroid now; the Phase 2.5 demo feeds the same code a live leader pose);
-  implement `MavrosAdapter.hold_reference`.
-- `compose.swarm.yaml` + wire the `sitl-5-drone-swarm` nightly job.
+Phases 0–2 complete. Next: the **Phase 2.5 leader-follow demo** — first
+rehearsed in the Gazebo SITL swarm (2.5a), then flown on real airframes (2.5b) —
+followed by Phase 3 (YOLO human detection).
 
 ---
 
-## Phase 2.5 — Hardware Demo: Leader-Follow Swarm (planned)
+## Phase 2.5 — Leader-Follow Demo (planned)
 
-A milestone, not a numbered phase: the first **on-hardware** flight, run after
-Phase 2. An operator manually manipulates the leader (`drone_0`); ≥2 followers
-autonomously hold a formation relative to the leader's live pose and track it as
-it moves. Mapping, computer vision, and autonomous search stay post-demo
-(Phases 3-5, unchanged). Specced in `PLAN.md` § D, Phase 2.5; integration
-decision in [`docs/adr/0008-leader-follow-demo-integration.md`](docs/adr/0008-leader-follow-demo-integration.md).
+A milestone in two stages: an operator manipulates the leader (`drone_0`) and
+the followers autonomously hold a diamond relative to the leader's *live* pose,
+tracking it as it moves. **2.5a** proves this in the Gazebo SITL swarm; **2.5b**
+flies it on real airframes — so no airframe flies a behaviour the simulator has
+not already shown. Mapping, computer vision, and autonomous search stay
+post-demo (Phases 3-5, unchanged). Specced in `PLAN.md` § D, Phase 2.5;
+integration decision in [`docs/adr/0008-leader-follow-demo-integration.md`](docs/adr/0008-leader-follow-demo-integration.md).
 
-**Integration**: followers fly GUIDED, commanded by `swarm_server_node` through
-`MavrosAdapter`; the formation reference is the leader's live MAVROS pose — a
-small generalization of Phase 2's `formation.py`. Native ArduPilot FOLLOW mode
-(`FOLL_SYSID` / `FOLL_OFS_*`) is the documented fallback (ADR 0008).
+**Integration** (both stages): followers fly GUIDED, commanded by
+`swarm_server_node` through `MavrosAdapter`; the formation reference is the
+leader's live MAVROS pose — a small generalization of Phase 2's `formation.py`.
+Native ArduPilot FOLLOW mode (`FOLL_SYSID` / `FOLL_OFS_*`) is the documented
+fallback (ADR 0008).
 
-**Entry criteria** (before any motor spins):
+### Phase 2.5a — Leader-Follow SITL Rehearsal
 
-- Phase 2 complete — `formation.py` / `swarm_server_node` proven in 5-drone SITL.
-- `formation.py` confirmed reference-agnostic — the demo feeds it a live leader
-  pose with no rewrite.
+Leader-follow proven in the Gazebo swarm sim before any hardware flies — it
+builds directly on the Phase 2 stack already running in `compose.swarm`.
+
+First tasks:
+
+- `swarm_server_node` live-reference mode — `/swarm/follow_leader`
+  (engage/disengage) whose control loop reads the leader's *live* pose each
+  tick, not the static centroid `/swarm/engage_formation` captures.
+- Follower-side leader-pose watchdog — stale leader pose → hold / LOITER.
+- Sim leader-input path — the operator moves `drone_0` via
+  `/swarm/drone_0/manual_goto` (or RC-into-SITL); the followers track it.
+
+Acceptance: in the Gazebo swarm, the operator moves the leader and the four
+followers track the diamond live <0.5 m mean horizontal error; the watchdog
+holds a follower on a simulated leader-pose dropout. Recorded
+`accept/leaderfollow_sitl.mcap`.
+
+### Phase 2.5b — Hardware Demo
+
+The first **on-hardware** flight — the same leader-follow on real airframes.
+
+Entry criteria (before any motor spins):
+
+- Phase 2.5a passed in SITL.
 - Condensed safety gate (a subset of the Phase 6 HIL checklist): per-airframe
   compass/accel calibration, props-off GUIDED arm test, geofence + RC-loss
   failsafe via QGC, single-drone manual hover for the leader and each follower.
 
-**First tasks**:
+First tasks:
 
-- Leader-relative formation mode in `swarm_control` — `formation.py` live
-  reference, `MavrosAdapter.hold_reference` moving-setpoint tracking,
-  `/swarm/follow_leader` engage/disengage, follower-side leader-pose watchdog.
 - `scripts/bringup/demo_swarm.sh` + per-airframe params in
   `config/ardupilot_params/`.
 - `docs/runbooks/first_flight.md` demo runbook; `demo.json` Foxglove layout.
 
-**Acceptance gate** (`PLAN.md` § D): manually-piloted leader, ≥2 followers
-(target 4) tracking a live leader-relative formation <2 m mean horizontal error
-for ≥60 s of leader motion; watchdog holds a follower on a simulated link drop;
+Acceptance gate (`PLAN.md` § D): manually-piloted leader, ≥2 followers (target 4)
+tracking a live leader-relative formation <2 m mean horizontal error for ≥60 s
+of leader motion; watchdog holds a follower on a simulated link drop;
 coordinated land. Recorded `accept/demo_leaderfollow.mcap` + flight video;
 safety-pilot + maintainer sign-off — no CI gate (hardware).
 
@@ -301,3 +394,19 @@ safety-pilot + maintainer sign-off — no CI gate (hardware).
   mode), status table, and the planned-section above. A deliberately minimal
   first-on-hardware-flight checkpoint after Phase 2 — manual leader manipulation
   + followers in formation; mapping/CV remain Phases 3-5.
+- **2026-05-21** — Phase 2 implementation pass: 5-drone SITL swarm.
+  `formation.py` (diamond/vee/column/line), `MavrosAdapter.hold_reference`,
+  `swarm_server_node` (takeoff/land/engage_formation/manual_goto + SwarmStatus),
+  `sitl_launcher.py` + `world_builder.py`, `sitl_swarm.launch.py`,
+  `compose.swarm.yaml` (+ GUI overlay), `operator.json`. Acceptance gate passed:
+  5-drone coordinated takeoff, diamond hold at 0.02 m mean drift (gate <0.5 m),
+  coordinated land; 48 unit tests green. Four blockers fixed (see "Phase 2 fixes
+  applied"). Deviation 7 added (pure-SITL gate, Gazebo on-screen). Phase 2
+  marked complete.
+- **2026-05-21** — Split the Phase 2.5 milestone into two stages: **2.5a**
+  Leader-Follow SITL Rehearsal (the operator moves the leader in the Gazebo
+  swarm, followers track the diamond live — proven before any hardware) and
+  **2.5b** Hardware Demo (the on-airframe flight). `PLAN.md` § D / § E / § G /
+  § H and this section restructured; status table now lists 2.5a + 2.5b. The
+  leader-follow code (`/swarm/follow_leader` live-reference mode + watchdog)
+  moves from a hardware-only task to the SITL-first 2.5a stage.

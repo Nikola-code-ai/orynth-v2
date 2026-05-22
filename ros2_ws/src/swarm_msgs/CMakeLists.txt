@@ -13,6 +13,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   msg/SwarmStatus.msg
   msg/DetectionWithGeo.msg
   srv/SetFormation.srv
+  srv/SwarmTakeoff.srv
+  srv/ManualGoto.srv
   srv/AssignSearchArea.srv
   action/FlySwarmMission.action
   action/SearchArea.action

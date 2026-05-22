@@ -1,0 +1,6 @@
+# Send one swarm vehicle to a point in the shared field ENU frame, releasing
+# it from formation hold. Served per drone as /swarm/<id>/manual_goto.
+geometry_msgs/Point target
+---
+bool success
+string message

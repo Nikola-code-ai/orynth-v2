@@ -234,6 +234,110 @@ cache, so steady-state runs hit the <8 min smoke-test budget.
 
 ---
 
+## Phase 2 — 5-Drone SITL Swarm + Diamond Formation
+
+Phase 2 brings up five ArduPilot SITL drones and flies a diamond-formation
+acceptance mission through `swarm_server_node` (PLAN § D / § I #5). As before,
+nothing runs in an interactive container.
+
+The swarm has two simulation backends, selected by the compose stack — both run
+the *same* `swarm_server` / formation / MAVROS layer:
+
+- **pure-SITL** (`arducopter --model=quad`) — headless, frame-clean, fast; what
+  the acceptance gate and CI run.
+- **Gazebo Harmonic** — the 3D world (ADR 0003), used for the on-screen review.
+
+> **Shortcut:** `make swarm-smoke` runs the acceptance gate; `make swarm-up`
+> brings the swarm up with the Gazebo GUI; `make swarm-down` tears it down.
+
+### 2.1 — Build the images
+
+Phase 2 reuses the Phase 1 images (`orynth-base:dev`, `orynth-sitl:dev`):
+
+```bash
+$ docker buildx build --load -f docker/base.Dockerfile -t orynth-base:dev .
+$ docker buildx build --load -f docker/sitl.Dockerfile \
+    --build-arg BASE_TAG=orynth-base:dev -t orynth-sitl:dev .
+```
+
+`sitl_swarm.sh` (step 2.3) builds both on demand, so this step is optional.
+
+### 2.2 — Unit gate
+
+The formation geometry, `MavrosAdapter`, the `swarm_server` orchestrator and
+the SITL launcher / world builder are all unit-tested with no SITL:
+
+```bash
+$ make test
+```
+
+Expected: `48 tests, 0 errors, 0 failures` (the cumulative suite — 22 at
+Phase 1, 48 once the Phase 2 `swarm_control` + `swarm_sim` tests land).
+
+### 2.3 — Run the swarm acceptance gate
+
+```bash
+$ make swarm-smoke        # or: bash scripts/bringup/sitl_swarm.sh
+```
+
+Builds images if needed, cold-starts the headless five-drone stack, then drives
+`swarm_server`: `/swarm/takeoff` → `/swarm/engage_formation diamond` → 60 s
+hold → `/swarm/land`. It asserts the diamond drift converges under 0.5 m mean
+(PLAN § D, Phase 2) and tears the stack down. Exit 0 = pass.
+
+### 2.4 — Bring up the swarm with the Gazebo GUI
+
+```bash
+$ make swarm-up
+```
+
+Layers `compose.swarm.gui.yaml` over `compose.swarm.yaml`: the `sim` container
+switches to Gazebo Harmonic (`SWARM_GAZEBO=1`), the X11 socket and `/dev/dri`
+are mounted, and `xhost +local:root` is granted. A Gazebo window opens with
+five `iris` drones. Requires a running X server (any Linux desktop session).
+
+### 2.5 — Foxglove operator layout
+
+With the swarm up, connect Foxglove Studio to `ws://localhost:8765` and import
+`ros2_ws/src/swarm_bringup/config/operator.json` — it shows all five drones:
+`/swarm/status`, live poses in 3D, and per-drone altitude.
+
+### 2.6 — Drive the swarm by hand
+
+The `swarm_server` services are plain ROS 2 services — drive them from the
+companion container:
+
+```bash
+$ docker compose -f docker/compose.swarm.yaml exec companion bash -lc '
+    source /opt/ros/humble/setup.bash && source /opt/overlay/setup.bash
+    ros2 service call /swarm/takeoff swarm_msgs/srv/SwarmTakeoff "{altitude_m: 5.0}"
+    ros2 service call /swarm/engage_formation swarm_msgs/srv/SetFormation \
+      "{formation_name: diamond, spacing_m: 4.0, heading_deg: 0.0}"
+    ros2 service call /swarm/land std_srvs/srv/Trigger "{}"
+  '
+```
+
+Formations: `diamond`, `vee`, `column`, `line`. A single drone is detached from
+the formation with `/swarm/drone_<N>/manual_goto`.
+
+### 2.7 — Teardown
+
+```bash
+$ make swarm-down
+```
+
+### 2.8 — What CI runs
+
+| Workflow | Reproduces locally as |
+|---|---|
+| `sitl_smoke.yml` (`sitl-5-drone-swarm`, nightly) | step 2.3 (`make swarm-smoke`) |
+| `unit.yml` | step 2.2 (`make test`) |
+
+The five-drone smoke runs nightly only; PR CI stays single-drone for the
+<8 min budget (PLAN § D).
+
+---
+
 ## Appendix A — How the Phase 0 pins were originally resolved
 
 These produced the values committed in `digests.lock`, `orynth.repos`, and
@@ -282,9 +386,11 @@ $ git push origin main
 
 ## Later phases
 
-Phase 2, the Phase 2.5 hardware demo, and later command sequences are added
-here as each lands. See `docs/runbooks/` for operational runbooks
-(`sitl_swarm_dev.md`, the demo's `first_flight.md`, …) and `WORKFLOW.md` for
-current phase status. The Phase 2.5 demo runs on real airframes — its
-acceptance gate and leader-follow integration are specified in `PLAN.md` § D
-and `docs/adr/0008-leader-follow-demo-integration.md`.
+The Phase 2.5 leader-follow demo and later command sequences are added here as
+each lands. Phase 2.5 runs in two stages: **2.5a** rehearses leader-follow in
+the Gazebo SITL swarm — the `compose.swarm` stack from § Phase 2 plus a
+`/swarm/follow_leader` live-tracking mode, so the operator moves the leader and
+the followers track the diamond live; **2.5b** flies the same on real
+airframes. See `docs/runbooks/` for operational runbooks (`sitl_swarm_dev.md`,
+the demo's `first_flight.md`, …), `WORKFLOW.md` for current phase status, and
+`PLAN.md` § D / `docs/adr/0008-leader-follow-demo-integration.md` for the spec.

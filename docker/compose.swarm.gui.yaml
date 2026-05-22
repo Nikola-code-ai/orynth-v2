@@ -1,0 +1,31 @@
+# On-screen Gazebo GUI overlay for the Phase 2 swarm stack.
+#
+# Layered over docker/compose.swarm.yaml, this switches the `sim` container
+# from headless pure-SITL to Gazebo Harmonic with its GUI rendered on the host
+# X server:
+#
+#   docker compose -f docker/compose.swarm.yaml \
+#                  -f docker/compose.swarm.gui.yaml up
+#
+# Use `make swarm-up`, which also runs `xhost +local:root` for X access.
+# Requires a running X server and a GPU render node at /dev/dri (any Linux
+# desktop session) — never used by CI, which runs the headless base file only.
+name: orynth-swarm
+
+services:
+  sim:
+    environment:
+      - SWARM_GAZEBO=1
+      - SWARM_HEADLESS=0
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    devices:
+      - /dev/dri:/dev/dri
+
+  companion:
+    # Shared 3D world -> deconflict the formation by altitude so drones never
+    # cross through one another (pure-SITL needs none; it has no shared world).
+    environment:
+      - FORMATION_ALT_STEP=2.0

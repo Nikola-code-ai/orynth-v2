@@ -1,0 +1,74 @@
+# Phase 2 five-drone swarm dev stack (PLAN section D, ADR 0003).
+#
+#   sim        orynth-sitl: swarm_sim.sitl_launcher — 5x ArduPilot SITL
+#              (pure-SITL 'quad' physics by default; Gazebo when SWARM_GAZEBO=1).
+#   companion  orynth-base: 5x namespaced MAVROS + swarm_server + Foxglove.
+#
+# Defaults are headless pure-SITL — what `scripts/bringup/sitl_swarm.sh` and
+# the nightly CI run (frame-clean, no Gazebo rendering). For an on-screen
+# Gazebo GUI, layer docker/compose.swarm.gui.yaml over this file (`make
+# swarm-up`).
+name: orynth-swarm
+
+services:
+  sim:
+    build:
+      context: ..
+      dockerfile: docker/sitl.Dockerfile
+      args:
+        BASE_TAG: orynth-base:dev
+    image: orynth-sitl:dev
+    container_name: orynth-swarm-sim
+    environment:
+      - DRONE_COUNT=${DRONE_COUNT:-5}
+      - SWARM_GAZEBO=${SWARM_GAZEBO:-0}
+      - SWARM_HEADLESS=${SWARM_HEADLESS:-1}
+    volumes:
+      - ..:/workspace:ro
+    command: ["bash", "/workspace/scripts/bringup/swarm_sim.sh"]
+    networks: [swarm-lan]
+    # No healthcheck: arducopter's serial0 accepts a single TCP client, so a
+    # polling probe would fight MAVROS for the slot (as in Phase 1). Swarm
+    # readiness is proven by the companion healthcheck instead.
+    stop_grace_period: 25s
+
+  companion:
+    image: orynth-base:dev
+    build:
+      context: ..
+      dockerfile: docker/base.Dockerfile
+    container_name: orynth-swarm-companion
+    depends_on:
+      - sim
+    environment:
+      - ROS_DOMAIN_ID=42
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - DRONE_COUNT=${DRONE_COUNT:-5}
+      - SIM_HOST=sim
+      - MAVROS_BASE_PORT=5760
+      - FOXGLOVE_PORT=8765
+    volumes:
+      - ../ros2_ws:/workspace/ros2_ws:ro
+      - ../scripts:/workspace/scripts:ro
+    command: ["bash", "/workspace/scripts/bringup/swarm_companion.sh"]
+    ports:
+      - "8765:8765"   # Foxglove bridge WebSocket
+    networks: [swarm-lan]
+    healthcheck:
+      # Healthy once drone_0's MAVROS is publishing state — proves the full
+      # SITL <-> MAVROS link for at least the leader.
+      test:
+        - "CMD"
+        - "bash"
+        - "-c"
+        - "source /opt/ros/humble/setup.bash && timeout 5 ros2 topic echo --once /drone_0/mavros/state >/dev/null 2>&1"
+      interval: 6s
+      timeout: 8s
+      retries: 40
+      # Generous: the companion builds the swarm_msgs IDL + overlay at start
+      # (~60-90 s) before launching five MAVROS instances.
+      start_period: 100s
+
+networks:
+  swarm-lan:
+    driver: bridge

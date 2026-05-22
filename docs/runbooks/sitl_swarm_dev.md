@@ -53,11 +53,39 @@ reference: `COMMANDS.md` § Phase 1.
 
 ## Phase 2 — 5-drone SITL swarm
 
+The swarm runs five ArduPilot SITL instances + five namespaced MAVROS +
+`swarm_server`. It has two interchangeable simulation backends — both drive the
+*same* `swarm_server` / formation stack:
+
 ```bash
-docker compose -f docker/compose.swarm.yaml up
+make swarm-smoke    # headless pure-SITL acceptance gate (takeoff/diamond/land)
+make swarm-up       # 5 drones in Gazebo Harmonic, GUI on the host display
+make swarm-down     # tear down
 ```
 
-Sends 5 SITL instances on ports `5760+N*10` (master) and `14550+N*10` (UDP). See `swarm_sim/sitl_launcher.py`.
+`make swarm-smoke` (= `scripts/bringup/sitl_swarm.sh`) cold-starts the headless
+stack, drives `/swarm/takeoff` → `/swarm/engage_formation diamond` → 60 s hold →
+`/swarm/land`, and asserts the diamond drift converges under 0.5 m mean. This is
+the Phase 2 acceptance gate and the nightly CI job.
+
+`make swarm-up` layers `docker/compose.swarm.gui.yaml`: the `sim` container runs
+Gazebo Harmonic with five `iris` drones and the GUI on screen. Connect Foxglove
+Studio to `ws://localhost:8765` and import
+`ros2_ws/src/swarm_bringup/config/operator.json` to watch all five.
+
+SITL instance N exposes MAVLink TCP on `5760+N*10`. `swarm_server` services:
+`/swarm/takeoff`, `/swarm/land`, `/swarm/engage_formation`,
+`/swarm/drone_<N>/manual_goto`. See `swarm_sim/sitl_launcher.py` and
+`swarm_control/swarm_server_node.py`; full command reference in
+`COMMANDS.md` § Phase 2.
+
+## Common gotchas (swarm)
+
+- **Gazebo GUI does not open (`make swarm-up`)**: needs an X server and
+  `/dev/dri`. `make swarm-up` runs `xhost +local:root`; if it still fails,
+  review headless via Foxglove instead — the swarm stack is identical.
+- **`companion` slow to go healthy**: it builds the `swarm_msgs` IDL + overlay
+  at container start (~60–90 s) before the five MAVROS instances launch.
 
 ## Adding a Python dependency
 

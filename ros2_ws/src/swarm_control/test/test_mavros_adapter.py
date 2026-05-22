@@ -8,6 +8,7 @@ streaming and pose-tracking logic are all covered.
 """
 
 import threading
+import time
 
 import pytest
 import rclpy
@@ -194,20 +195,32 @@ def test_land_disarms(harness):
     assert not adapter.armed
 
 
-def test_hold_reference_not_implemented(harness):
-    adapter, _ = harness
-    with pytest.raises(NotImplementedError):
-        adapter.hold_reference(
-            FollowReferenceRequest(
-                x=0.0,
-                y=0.0,
-                z=0.0,
-                frame_id="map",
-                speed_x_mps=0.0,
-                speed_y_mps=0.0,
-                speed_z_mps=0.0,
-            )
-        )
+def test_hold_reference_streams_a_setpoint(harness):
+    adapter, fake = harness
+    assert adapter.wait_for_connection(timeout_s=5.0)
+    req = FollowReferenceRequest(
+        x=3.0,
+        y=4.0,
+        z=5.0,
+        frame_id="map",
+        speed_x_mps=0.0,
+        speed_y_mps=0.0,
+        speed_z_mps=0.0,
+    )
+    # Non-blocking: one PositionTarget published per call. A moving reference
+    # is tracked by streaming the call (the swarm server's formation loop) —
+    # stream it here too, which also lets pub/sub discovery settle.
+    deadline = time.monotonic() + 5.0
+    while not fake.setpoints and time.monotonic() < deadline:
+        assert adapter.hold_reference(req) is True
+        time.sleep(0.05)
+    assert fake.setpoints, "hold_reference must publish a PositionTarget"
+    last = fake.setpoints[-1]
+    assert last.coordinate_frame == PositionTarget.FRAME_LOCAL_NED
+    assert last.type_mask == MavrosAdapter.POSITION_TYPE_MASK
+    assert last.position.x == pytest.approx(3.0)
+    assert last.position.y == pytest.approx(4.0)
+    assert last.position.z == pytest.approx(5.0)
 
 
 def test_full_mission_sequence(harness):
