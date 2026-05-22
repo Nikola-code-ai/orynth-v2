@@ -13,6 +13,10 @@
   <exec_depend>swarm_perception</exec_depend>
   <exec_depend>swarm_sim</exec_depend>
 
+  <!-- sitl_single.launch.py includes these upstream launch files (Phase 1). -->
+  <exec_depend>mavros</exec_depend>
+  <exec_depend>foxglove_bridge</exec_depend>
+
   <export>
     <build_type>ament_cmake</build_type>
   </export>
