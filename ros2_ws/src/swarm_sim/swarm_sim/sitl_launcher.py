@@ -72,9 +72,7 @@ def _defaults_csv(gazebo: bool) -> str:
     return ",".join(c for c in candidates if os.path.exists(c))
 
 
-def arducopter_command(
-    index: int, gazebo: bool, sysid_file: str = ""
-) -> list[str]:
+def arducopter_command(index: int, gazebo: bool, sysid_file: str = "") -> list[str]:
     """Build the ``arducopter`` argv for SITL instance ``index``.
 
     ``sysid_file``, when given, is appended to ``--defaults`` so the instance
@@ -177,7 +175,9 @@ def main(argv: list[str] | None = None) -> int:
         world = build_world(args.drones, args.spacing)
         with open(args.world, "w", encoding="utf-8") as fh:
             fh.write(world)
-        print(f"[sitl_launcher] wrote world -> {args.world}", file=sys.stderr, flush=True)
+        print(
+            f"[sitl_launcher] wrote world -> {args.world}", file=sys.stderr, flush=True
+        )
         _spawn("gazebo", gz_command(args.world, args.headless))
         time.sleep(args.sitl_delay)  # let Gazebo load models + bind FDM ports
 

@@ -26,14 +26,28 @@ except ImportError:
 
 # ArduPilot Copter mode numbers (HEARTBEAT.custom_mode) we are likely to see.
 COPTER_MODES = {
-    0: "STABILIZE", 1: "ACRO", 2: "ALT_HOLD", 3: "AUTO", 4: "GUIDED",
-    5: "LOITER", 6: "RTL", 7: "CIRCLE", 9: "LAND", 16: "POSHOLD",
-    17: "BRAKE", 20: "GUIDED_NOGPS",
+    0: "STABILIZE",
+    1: "ACRO",
+    2: "ALT_HOLD",
+    3: "AUTO",
+    4: "GUIDED",
+    5: "LOITER",
+    6: "RTL",
+    7: "CIRCLE",
+    9: "LAND",
+    16: "POSHOLD",
+    17: "BRAKE",
+    20: "GUIDED_NOGPS",
 }
 
 GPS_FIX = {
-    0: "no GPS", 1: "no fix", 2: "2D fix", 3: "3D fix",
-    4: "DGPS", 5: "RTK float", 6: "RTK fixed",
+    0: "no GPS",
+    1: "no fix",
+    2: "2D fix",
+    3: "3D fix",
+    4: "DGPS",
+    5: "RTK float",
+    6: "RTK fixed",
 }
 
 
@@ -42,15 +56,30 @@ def parse_args():
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument("--port", default="/dev/ttyTHS1",
-                   help="serial device wired to the FC (default: %(default)s)")
-    p.add_argument("--baud", type=int, default=57600,
-                   help="baud rate; ArduPilot TELEM ports default to 57600 "
-                        "(default: %(default)s)")
-    p.add_argument("--heartbeat-timeout", type=float, default=15.0,
-                   help="seconds to wait for the first heartbeat")
-    p.add_argument("--watch", type=float, default=8.0,
-                   help="seconds to stream live telemetry after connecting")
+    p.add_argument(
+        "--port",
+        default="/dev/ttyTHS1",
+        help="serial device wired to the FC (default: %(default)s)",
+    )
+    p.add_argument(
+        "--baud",
+        type=int,
+        default=57600,
+        help="baud rate; ArduPilot TELEM ports default to 57600 "
+        "(default: %(default)s)",
+    )
+    p.add_argument(
+        "--heartbeat-timeout",
+        type=float,
+        default=15.0,
+        help="seconds to wait for the first heartbeat",
+    )
+    p.add_argument(
+        "--watch",
+        type=float,
+        default=8.0,
+        help="seconds to stream live telemetry after connecting",
+    )
     return p.parse_args()
 
 
@@ -66,7 +95,7 @@ def connect(port, baud, timeout):
     print("Opening %s @ %d baud ..." % (port, baud))
     try:
         master = mavutil.mavlink_connection(port, baud=baud)
-    except Exception as exc:        # serial errors, missing device, perms
+    except Exception as exc:  # serial errors, missing device, perms
         sys.exit("Could not open %s: %s" % (port, exc))
 
     print("Waiting up to %.0fs for a heartbeat ..." % timeout)
@@ -85,21 +114,28 @@ def report_heartbeat(master, hb):
     mode = COPTER_MODES.get(hb.custom_mode, "mode#%d" % hb.custom_mode)
     print()
     print("=== Heartbeat received ===")
-    print("  link target   : system %d, component %d"
-          % (master.target_system, master.target_component))
+    print(
+        "  link target   : system %d, component %d"
+        % (master.target_system, master.target_component)
+    )
     print("  autopilot     : %s" % name_of("MAV_AUTOPILOT", hb.autopilot))
     print("  vehicle type  : %s" % name_of("MAV_TYPE", hb.type))
     print("  system status : %s" % name_of("MAV_STATE", hb.system_status))
     print("  flight mode   : %s" % mode)
-    print("  armed         : %s" % ("YES  <-- vehicle is armed!" if armed
-                                    else "no (disarmed)"))
+    print(
+        "  armed         : %s"
+        % ("YES  <-- vehicle is armed!" if armed else "no (disarmed)")
+    )
 
 
 def stream_telemetry(master, seconds):
     """Collect a few seconds of telemetry; return the latest of each type."""
     master.mav.request_data_stream_send(
-        master.target_system, master.target_component,
-        mavutil.mavlink.MAV_DATA_STREAM_ALL, 4, 1,   # 4 Hz, start streaming
+        master.target_system,
+        master.target_component,
+        mavutil.mavlink.MAV_DATA_STREAM_ALL,
+        4,
+        1,  # 4 Hz, start streaming
     )
     print()
     print("Streaming telemetry for %.0fs ..." % seconds)
@@ -124,27 +160,33 @@ def report_telemetry(latest):
     sysst = latest.get("SYS_STATUS")
     if sysst is not None:
         volts = sysst.voltage_battery / 1000.0
-        amps = (sysst.current_battery / 100.0
-                if sysst.current_battery != -1 else None)
-        print("  battery       : %.2f V%s, %d%% remaining"
-              % (volts,
-                 ", %.1f A" % amps if amps is not None else "",
-                 sysst.battery_remaining))
+        amps = sysst.current_battery / 100.0 if sysst.current_battery != -1 else None
+        print(
+            "  battery       : %.2f V%s, %d%% remaining"
+            % (
+                volts,
+                ", %.1f A" % amps if amps is not None else "",
+                sysst.battery_remaining,
+            )
+        )
     else:
         print("  battery       : no SYS_STATUS received")
 
     gps = latest.get("GPS_RAW_INT")
     if gps is not None:
-        print("  gps           : %s, %d satellites"
-              % (GPS_FIX.get(gps.fix_type, "?"), gps.satellites_visible))
+        print(
+            "  gps           : %s, %d satellites"
+            % (GPS_FIX.get(gps.fix_type, "?"), gps.satellites_visible)
+        )
     else:
         print("  gps           : no GPS_RAW_INT received")
 
     att = latest.get("ATTITUDE")
     if att is not None:
-        print("  attitude      : roll %+.1f  pitch %+.1f  yaw %+.1f (deg)"
-              % (math.degrees(att.roll), math.degrees(att.pitch),
-                 math.degrees(att.yaw)))
+        print(
+            "  attitude      : roll %+.1f  pitch %+.1f  yaw %+.1f (deg)"
+            % (math.degrees(att.roll), math.degrees(att.pitch), math.degrees(att.yaw))
+        )
     else:
         print("  attitude      : no ATTITUDE received")
 

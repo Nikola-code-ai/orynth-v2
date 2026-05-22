@@ -117,7 +117,7 @@ def build_formation(name: str, vehicle_count: int, spacing_m: float) -> Formatio
         raise ValueError(f"spacing_m must be > 0, got {spacing_m}")
 
     pairs = _GENERATORS[key](vehicle_count, float(spacing_m))
-    offsets = tuple(Offset(forward_m=f, left_m=l) for f, l in pairs)
+    offsets = tuple(Offset(forward_m=fwd, left_m=left) for fwd, left in pairs)
     return Formation(name=key, spacing_m=float(spacing_m), offsets=offsets)
 
 

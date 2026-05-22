@@ -36,21 +36,39 @@ def parse_args():
     )
     p.add_argument("--port", default="/dev/ttyTHS1")
     p.add_argument("--baud", type=int, default=57600)
-    p.add_argument("--motor", type=int, default=1,
-                   help="motor number in ArduPilot test order (1-indexed)")
-    p.add_argument("--throttle", type=float, default=8.0,
-                   help="throttle percent; start low, raise in small steps")
-    p.add_argument("--timeout", type=float, default=3.0,
-                   help="seconds the motor spins before the FC stops it")
-    p.add_argument("--max-throttle", type=float, default=SAFE_THROTTLE_CEILING,
-                   help="raise the throttle safety ceiling (bench use only)")
+    p.add_argument(
+        "--motor",
+        type=int,
+        default=1,
+        help="motor number in ArduPilot test order (1-indexed)",
+    )
+    p.add_argument(
+        "--throttle",
+        type=float,
+        default=8.0,
+        help="throttle percent; start low, raise in small steps",
+    )
+    p.add_argument(
+        "--timeout",
+        type=float,
+        default=3.0,
+        help="seconds the motor spins before the FC stops it",
+    )
+    p.add_argument(
+        "--max-throttle",
+        type=float,
+        default=SAFE_THROTTLE_CEILING,
+        help="raise the throttle safety ceiling (bench use only)",
+    )
     return p.parse_args()
 
 
 def confirm_safety(args):
     print("=" * 64)
-    print(" MOTOR TEST -- will spin motor #%d at %.0f%% for %.0fs"
-          % (args.motor, args.throttle, args.timeout))
+    print(
+        " MOTOR TEST -- will spin motor #%d at %.0f%% for %.0fs"
+        % (args.motor, args.throttle, args.timeout)
+    )
     print("=" * 64)
     print(" Confirm ALL of the following before continuing:")
     print("   * every propeller is removed from every motor")
@@ -69,14 +87,14 @@ def send_motor_test(master, motor, throttle, timeout):
         master.target_system,
         master.target_component,
         mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST,
-        0,                                              # confirmation
-        motor,                                          # p1: motor number
-        mavutil.mavlink.MOTOR_TEST_THROTTLE_PERCENT,    # p2: throttle type
-        throttle,                                       # p3: throttle value
-        timeout,                                        # p4: spin time (s)
-        0,                                              # p5: motor count (one)
-        0,                                              # p6: test order
-        0,                                              # p7: unused
+        0,  # confirmation
+        motor,  # p1: motor number
+        mavutil.mavlink.MOTOR_TEST_THROTTLE_PERCENT,  # p2: throttle type
+        throttle,  # p3: throttle value
+        timeout,  # p4: spin time (s)
+        0,  # p5: motor count (one)
+        0,  # p6: test order
+        0,  # p7: unused
     )
 
 
@@ -94,9 +112,10 @@ def main():
     args = parse_args()
 
     if args.throttle > args.max_throttle:
-        sys.exit("Throttle %.0f%% exceeds the %.0f%% ceiling. Lower it, or "
-                 "raise --max-throttle deliberately."
-                 % (args.throttle, args.max_throttle))
+        sys.exit(
+            "Throttle %.0f%% exceeds the %.0f%% ceiling. Lower it, or "
+            "raise --max-throttle deliberately." % (args.throttle, args.max_throttle)
+        )
 
     print("Opening %s @ %d baud ..." % (args.port, args.baud))
     try:
@@ -124,20 +143,20 @@ def main():
     if ack is None:
         print("No COMMAND_ACK received -- motor may or may not have run.")
     elif ack.result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
-        print("Motor test ACCEPTED -- motor #%d should be spinning."
-              % args.motor)
+        print("Motor test ACCEPTED -- motor #%d should be spinning." % args.motor)
     else:
         result = mavutil.mavlink.enums["MAV_RESULT"][ack.result].name
         print("Motor test REJECTED by FC: %s" % result)
-        print("Common causes: safety switch still engaged, frame not "
-              "configured (FRAME_CLASS / FRAME_TYPE), or ESCs unpowered.")
+        print(
+            "Common causes: safety switch still engaged, frame not "
+            "configured (FRAME_CLASS / FRAME_TYPE), or ESCs unpowered."
+        )
 
     # Watch the spin window, surfacing any FC status messages.
     try:
         end = time.time() + args.timeout + 1.0
         while time.time() < end:
-            m = master.recv_match(type="STATUSTEXT", blocking=True,
-                                  timeout=1.0)
+            m = master.recv_match(type="STATUSTEXT", blocking=True, timeout=1.0)
             if m is not None:
                 print("  [FC] %s" % m.text)
     except KeyboardInterrupt:

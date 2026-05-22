@@ -102,7 +102,7 @@ def build_world(
         world,
         flags=re.DOTALL,
     )
-    world = world.replace("<world name=\"iris_runway\">", '<world name="orynth_swarm">')
+    world = world.replace('<world name="iris_runway">', '<world name="orynth_swarm">')
 
     half = (drone_count - 1) / 2.0
     blocks = "".join(

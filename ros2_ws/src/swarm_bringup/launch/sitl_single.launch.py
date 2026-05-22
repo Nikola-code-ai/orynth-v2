@@ -26,9 +26,7 @@ def generate_launch_description() -> LaunchDescription:
 
     mavros = IncludeLaunchDescription(
         AnyLaunchDescriptionSource(
-            PathJoinSubstitution(
-                [FindPackageShare("mavros"), "launch", "apm.launch"]
-            )
+            PathJoinSubstitution([FindPackageShare("mavros"), "launch", "apm.launch"])
         ),
         launch_arguments={
             "fcu_url": fcu_url,
