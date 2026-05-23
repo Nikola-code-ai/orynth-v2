@@ -141,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
     global _stop
     parser = argparse.ArgumentParser(description="Launch the Orynth SITL swarm.")
     parser.add_argument("--drones", type=int, default=5)
-    parser.add_argument("--spacing", type=float, default=5.0)
+    parser.add_argument("--spacing", type=float, default=2.0)
     parser.add_argument(
         "--gazebo",
         action=argparse.BooleanOptionalAction,

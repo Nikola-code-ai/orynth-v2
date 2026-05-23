@@ -32,6 +32,17 @@ SPAWN_Z_M = 0.195
 #: Model yaw — matches the stock iris_runway spawn.
 SPAWN_YAW_DEG = 90.0
 
+#: Centered diamond, scaled by spacing — drone_0 east apex, _3 west tail,
+#: _1/_2 the north/south wings, _4 the centre. Only defined for n ≤ 5; the
+#: shape is the same one ``formation._diamond`` flies in the air.
+_DIAMOND_UNIT = (
+    (+1.0, 0.0),  # 0 leader — east apex
+    (0.0, +1.0),  # 1 left wing — north
+    (0.0, -1.0),  # 2 right wing — south
+    (-1.0, 0.0),  # 3 tail — west
+    (0.0, 0.0),   # 4 centre
+)
+
 
 def _model_inner(model_sdf_text: str) -> str:
     """Return the body of the ``iris_with_ardupilot`` ``<model>`` element.
@@ -73,17 +84,30 @@ def drone_model_block(
     )
 
 
+def _spawn_offsets(drone_count: int, spacing_m: float) -> list[tuple[float, float]]:
+    """Return (east, north) spawn offsets, centred on the world origin.
+
+    Diamond layout for n ≤ 5 (matches ``_DIAMOND_UNIT``); falls back to a row
+    along East for larger swarms, where the diamond template is undefined.
+    """
+    if drone_count <= len(_DIAMOND_UNIT):
+        return [(e * spacing_m, n * spacing_m) for e, n in _DIAMOND_UNIT[:drone_count]]
+    half = (drone_count - 1) / 2.0
+    return [((i - half) * spacing_m, 0.0) for i in range(drone_count)]
+
+
 def build_world(
     drone_count: int,
-    spacing_m: float = 5.0,
+    spacing_m: float = 2.0,
     *,
     model_sdf_path: str = DEFAULT_MODEL_SDF,
     world_template_path: str = DEFAULT_WORLD_TEMPLATE,
 ) -> str:
     """Return the SDF text for an N-drone Orynth swarm world.
 
-    Drones spawn in a row centred on the world origin, ``spacing_m`` apart
-    along East, so they are visually separated and never spawn intersecting.
+    Drones spawn in a compact diamond centred on the world origin (drone_0 at
+    the east apex, _3 at the west tail, _1/_2 the north/south wings, _4 the
+    centre), ``spacing_m`` apart. Falls back to an east-west row for n > 5.
     """
     if drone_count < 1:
         raise ValueError(f"drone_count must be >= 1, got {drone_count}")
@@ -104,10 +128,9 @@ def build_world(
     )
     world = world.replace('<world name="iris_runway">', '<world name="orynth_swarm">')
 
-    half = (drone_count - 1) / 2.0
     blocks = "".join(
-        drone_model_block(i, (i - half) * spacing_m, 0.0, inner)
-        for i in range(drone_count)
+        drone_model_block(i, east, north, inner)
+        for i, (east, north) in enumerate(_spawn_offsets(drone_count, spacing_m))
     )
     return world.replace("  </world>", f"{blocks}  </world>")
 
@@ -116,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     """Write a swarm world to disk — ``python -m swarm_sim.world_builder``."""
     parser = argparse.ArgumentParser(description="Generate an Orynth swarm world.")
     parser.add_argument("--drones", type=int, default=5)
-    parser.add_argument("--spacing", type=float, default=5.0)
+    parser.add_argument("--spacing", type=float, default=2.0)
     parser.add_argument("--out", default="/tmp/orynth_swarm.sdf")
     parser.add_argument("--model-sdf", default=DEFAULT_MODEL_SDF)
     parser.add_argument("--world-template", default=DEFAULT_WORLD_TEMPLATE)
