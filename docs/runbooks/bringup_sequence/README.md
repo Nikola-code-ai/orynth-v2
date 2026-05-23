@@ -14,8 +14,9 @@ with an explicit gate before the next stage begins. The document carries:
 - a UML deployment view for each stage;
 - sequence diagrams for `make demo-up`, a single `/swarm/*` service call, and
   the swarm-wide takeoff fan-out;
-- the **multicast vs unicast SPDP** picture that motivates the Cyclone DDS
-  peer list, plus a verbatim copy of the per-drone XML;
+- the **inter-drone radio** picture (post-ADR 0009): SiK/RFD900x topology,
+  the role of `radio_bridge`, and the per-Jetson `cyclonedds_local_only.xml`
+  that replaced the multi-host DDS peer list;
 - the preflight gate as an activity diagram;
 - the watchdog as a state machine;
 - a top-down field-setup diagram for the five-drone diamond;

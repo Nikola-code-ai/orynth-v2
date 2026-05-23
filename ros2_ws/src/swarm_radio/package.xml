@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>swarm_radio</name>
+  <version>0.1.0</version>
+  <description>SiK/RFD900 MAVLink radio bridge for inter-drone communication. Replaces cross-Jetson Cyclone DDS for swarm coordination (ADR 0009).</description>
+  <maintainer email="dev.markovic@protonmail.com">Nikola Markovic</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>mavros_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>swarm_msgs</depend>
+
+  <exec_depend>python3-serial</exec_depend>
+  <exec_depend>python3-pymavlink</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

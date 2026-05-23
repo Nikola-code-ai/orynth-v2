@@ -7,15 +7,22 @@ ROS side against the real ArduPilot flight controller wired to the Jetson:
   ``/drone_<DRONE_ID>/mavros/*`` — the namespace ``MavrosAdapter`` expects —
   with a distinct ``tgt_system`` (``DRONE_ID + 1``) for a unique ``/uas``
   router prefix (matches the FC's ``SYSID_THISMAV``);
+* one ``radio_bridge`` instance (package ``swarm_radio``) wired to the SiK /
+  RFD900 radio. The bridge is the inter-drone transport: it replaces what
+  Cyclone DDS over WiFi used to do for cross-Jetson topics (ADR 0009);
 * on the **leader's** Jetson only (``WITH_SWARM_SERVER=1``): the Foxglove
-  bridge and ``swarm_server_node`` — the orchestrator that drives all five
-  drones over the shared Cyclone DDS LAN.
+  bridge and ``swarm_server_node`` — the orchestrator that drives all drones
+  via the local ``/drone_K/mavros/*`` surface (real for drone 0, synthesised
+  by the leader-side ``radio_bridge`` for drone 1..N).
 
-Followers run MAVROS alone; the leader's Jetson is the demo's ground hub.
-Everything is environment-driven so ``docker/compose.demo.yaml`` configures it;
-it also runs directly for bench bring-up:
+Followers run MAVROS + radio_bridge alone; the leader's Jetson additionally
+runs swarm_server + Foxglove. Each Jetson now uses its OWN ``ROS_DOMAIN_ID``
+(``100 + DRONE_ID``) — there is no longer a shared DDS LAN across drones.
 
-    DRONE_ID=0 WITH_SWARM_SERVER=1 DRONE_COUNT=5 \\
+Everything is environment-driven so ``docker/compose.demo.yaml`` configures
+it; it also runs directly for bench bring-up:
+
+    DRONE_ID=0 WITH_SWARM_SERVER=1 DRONE_COUNT=2 RADIO_ROLE=leader \\
         ros2 launch swarm_bringup hw_drone.launch.py
 """
 
@@ -31,7 +38,7 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description() -> LaunchDescription:
     drone_id = int(os.environ.get("DRONE_ID", "0"))
-    drone_count = int(os.environ.get("DRONE_COUNT", "5"))
+    drone_count = int(os.environ.get("DRONE_COUNT", "2"))
     # ArduPilot TELEM ports default to 57600 baud; raise SERIALx_BAUD and this
     # default to 921600 baud on real hardware to avoid stream choking.
     fcu_url = os.environ.get("FCU_URL", "serial:///dev/ttyTHS1:921600")
@@ -50,6 +57,11 @@ def generate_launch_description() -> LaunchDescription:
         "true",
         "yes",
     )
+
+    # Radio bridge config — see swarm_radio.radio_bridge_node.
+    radio_role = os.environ.get("RADIO_ROLE", "leader" if with_server else "follower")
+    radio_device = os.environ.get("RADIO_DEVICE", "/dev/ttyUSB_RFD")
+    radio_baud = int(os.environ.get("RADIO_BAUD", "57600"))
 
     apm_launch = PathJoinSubstitution(
         [FindPackageShare("mavros"), "launch", "apm.launch"]
@@ -70,10 +82,28 @@ def generate_launch_description() -> LaunchDescription:
         ]
     )
 
-    entities = [mavros]
+    radio_bridge = Node(
+        package="swarm_radio",
+        executable="radio_bridge",
+        name="radio_bridge",
+        output="screen",
+        parameters=[
+            {
+                "role": radio_role,
+                "local_drone_id": drone_id,
+                "drone_count": drone_count,
+                "serial_device": radio_device,
+                "serial_baud": radio_baud,
+            }
+        ],
+    )
+
+    entities = [mavros, radio_bridge]
 
     # The leader's Jetson is the demo ground hub: it also runs the Foxglove
-    # bridge (one bridge sees the whole DDS LAN) and the swarm orchestrator.
+    # bridge and the swarm orchestrator. swarm_server's MavrosAdapter for each
+    # follower drone N talks to /drone_N/mavros/* — those topics are now
+    # synthesised locally by radio_bridge (role=leader) from radio frames.
     if with_server:
         entities.append(
             IncludeLaunchDescription(

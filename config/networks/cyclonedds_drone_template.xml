@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!--
-  Cyclone DDS configuration template (ADR 0004).
-  Copy to cyclonedds_drone_<N>.xml and fill in {{DRONE_N}} + peer IPs.
-  WiFi APs typically drop multicast → discovery uses explicit peer list.
+  Cyclone DDS peer-list template (LEGACY — ADR 0004).
+
+  This config was used when inter-drone communication ran over Cyclone DDS on
+  a shared WiFi LAN. It is superseded by ADR 0009: hardware drones now use
+  SiK/RFD900 MAVLink radio for cross-drone traffic and `cyclonedds_local_only.xml`
+  for DDS, which binds to `lo`. This file is retained as a fallback for
+  bench-up over WiFi when radios are not yet available; do NOT use it on
+  airframes.
 -->
 <CycloneDDS xmlns="https://cdds.io/config" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
             xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">

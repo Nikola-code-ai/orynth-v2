@@ -1,6 +1,13 @@
 # ADR 0004: Cyclone DDS intra-swarm + Zenoh on the WAN edge
 
-**Status**: accepted · **Date**: 2026-05-21
+**Status**: superseded in part by [ADR 0009](0009-mavlink-radio-supersedes-dds-intra-swarm.md) (intra-swarm half) · **Date**: 2026-05-21
+
+> **Note (2026-05-23):** the *intra-swarm* decision below was superseded by
+> ADR 0009 — hardware drones now use SiK/RFD900 MAVLink radio for cross-drone
+> traffic, and Cyclone DDS is bound to `lo` per Jetson with a per-drone
+> `ROS_DOMAIN_ID`. The *Zenoh on the WAN edge* half (leader → GCS) is
+> independent and remains in force. The text below is preserved as historical
+> context.
 
 ## Context
 

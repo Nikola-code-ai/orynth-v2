@@ -3,26 +3,29 @@
 # This is the hardware swarm counterpart of docker/compose.swarm.yaml. Each
 # Jetson runs this compose file with its own DRONE_ID; the file brings up one
 # namespaced MAVROS against the real ArduPilot flight controller wired to that
-# Jetson. The leader's Jetson (DRONE_ID=0) additionally runs WITH_SWARM_SERVER
-# so it hosts the Foxglove bridge and the swarm orchestrator.
+# Jetson, plus a `radio_bridge` instance for the SiK/RFD900 inter-drone link.
+# The leader's Jetson (DRONE_ID=0) additionally runs WITH_SWARM_SERVER so it
+# hosts the Foxglove bridge and the swarm orchestrator.
 #
 #   # on every Jetson, leader first:
-#   DRONE_ID=0 WITH_SWARM_SERVER=1 make demo-up   # leader  (drone_0)
+#   DRONE_ID=0 WITH_SWARM_SERVER=1 make demo-up   # leader   (drone_0)
 #   DRONE_ID=1 make demo-up                       # follower (drone_1)
-#   ...                                           # drone_2..4 likewise
 #
-# `network_mode: host` is required: the five Jetsons discover each other's ROS
-# graph over the physical WiFi LAN, which a Docker bridge network cannot reach.
-# On a LAN where the AP drops multicast, point CYCLONEDDS_URI at a peer-list
-# config under config/networks/ (see docs/runbooks/jetson_swarm_operations.md).
+# Networking model (ADR 0009): each Jetson has its OWN ROS_DOMAIN_ID
+# (`100 + DRONE_ID`) and DDS is bound to `lo` via `cyclonedds_local_only.xml`.
+# There is no shared DDS LAN any more. Cross-drone topics ride MAVLink over
+# the radio that `radio_bridge` owns. `network_mode: host` stays so the
+# container can see the RFD900 USB-UART; it is no longer there for DDS.
 #
 # Overridable env (export, or use an .env file):
-#   DRONE_ID            this drone's index 0..4           (default 0)
-#   DRONE_COUNT         drones in the swarm               (default 5)
-#   WITH_SWARM_SERVER   1 on the leader's Jetson only     (default 0)
-#   FC_DEVICE           host serial device to the FC      (default /dev/ttyTHS1)
+#   DRONE_ID            this drone's index 0..N-1           (default 0)
+#   DRONE_COUNT         drones in the swarm                 (default 2)
+#   WITH_SWARM_SERVER   1 on the leader's Jetson only       (default 0)
+#   FC_DEVICE           host serial device to the FC        (default /dev/ttyTHS1)
 #   FCU_URL             MAVROS endpoint, serial:///dev:baud (default 921600 baud)
-#   CYCLONEDDS_URI      Cyclone DDS peer-list config       (default unset)
+#   RADIO_DEVICE        host serial device to the radio     (default /dev/ttyUSB_RFD)
+#   RADIO_BAUD          radio baud rate                     (default 57600)
+#   RADIO_ROLE          leader | follower                   (default derived from WITH_SWARM_SERVER)
 name: orynth-demo
 
 services:
@@ -32,22 +35,27 @@ services:
       context: ..
       dockerfile: docker/base.Dockerfile
     container_name: orynth-demo-${DRONE_ID:-0}
-    # Host networking — cross-Jetson DDS discovery over the WiFi LAN.
+    # Host networking — needed for USB-UART device passthrough and so the
+    # operator can reach the Foxglove bridge from the GCS over WiFi.
+    # NOT required for inter-drone discovery any more (ADR 0009).
     network_mode: host
     volumes:
       - ../ros2_ws:/workspace/ros2_ws:ro
       - ../scripts:/workspace/scripts:ro
       - ../config:/workspace/config:ro
-    # The flight-controller serial device. Host path overridable; the
-    # in-container path is fixed at /dev/ttyTHS1 so FCU_URL never changes.
+    # Both serial devices: the flight controller and the inter-drone radio.
+    # Host paths overridable; in-container paths are fixed.
     devices:
       - "${FC_DEVICE:-/dev/ttyTHS1}:/dev/ttyTHS1"
+      - "${RADIO_DEVICE:-/dev/ttyUSB_RFD}:/dev/ttyUSB_RFD"
     environment:
-      - ROS_DOMAIN_ID=42
+      # Per-drone DDS domain — no longer shared. Defence in depth on top of
+      # cyclonedds_local_only.xml binding to `lo`.
+      - ROS_DOMAIN_ID=$((100 + ${DRONE_ID:-0}))
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-      - CYCLONEDDS_URI=${CYCLONEDDS_URI:-}
+      - CYCLONEDDS_URI=file:///workspace/config/networks/cyclonedds_local_only.xml
       - DRONE_ID=${DRONE_ID:-0}
-      - DRONE_COUNT=${DRONE_COUNT:-5}
+      - DRONE_COUNT=${DRONE_COUNT:-2}
       - WITH_SWARM_SERVER=${WITH_SWARM_SERVER:-0}
       - FCU_URL=${FCU_URL:-serial:///dev/ttyTHS1:921600}
       - FOXGLOVE_PORT=8765
@@ -58,6 +66,10 @@ services:
       # yaws the leader's nose toward each goto target, which would otherwise
       # swing followers through the leader on every direction change.
       - FORMATION_LOCK_HEADING=${FORMATION_LOCK_HEADING:-1}
+      # Radio bridge config — see swarm_radio.radio_bridge_node.
+      - RADIO_DEVICE=/dev/ttyUSB_RFD
+      - RADIO_BAUD=${RADIO_BAUD:-57600}
+      - RADIO_ROLE=${RADIO_ROLE:-}
     command: ["bash", "/workspace/scripts/bringup/demo_companion.sh"]
     healthcheck:
       # Healthy once this drone's MAVROS reports a live link to its FC.

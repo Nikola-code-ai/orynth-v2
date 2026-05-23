@@ -1,39 +1,105 @@
-# Orynth v2 — bring up Gazebo swarm + keyboard teleop
-# Run each block in order. Steps 2 and 3 are in separate terminals.
+# Orynth v2 — Gazebo swarm + keyboard teleop (showcase)
+# Run blocks in order. Each `# ---` block = one terminal.
+# IMPORTANT: do NOT skip the wait gate in block 2. Takeoff will fail with
+# "Accels inconsistent" / "AHRS: waiting for home" if you fire it too early.
+#
+# SITL ONLY. This demo runs five ArduPilot SITL instances on one host, all on
+# Cyclone DDS over 127.0.0.1 — radio_bridge / SiK / RFD900x are NOT involved.
+# For the hardware leader-follow flight (Phase 2.5b, real radios on Jetsons),
+# see docs/runbooks/jetson_swarm_operations.md and docs/runbooks/first_flight.md.
 
-# ---------- 1. Bring up 5-drone Gazebo swarm (host shell, repo root) ----------
+cd ~/Projects/Orynth/v2
+
+
+# ---------- 1. Bring up the 5-drone Gazebo swarm (terminal A) ----------
 make swarm-up
 
-# Wait ~60-90s for `companion` to go healthy.
-# Foxglove: connect Studio to ws://localhost:8765
-# Optional layout: ros2_ws/src/swarm_bringup/config/operator.json
+# WATCH FOR:
+#   - Last line prints: "Swarm up — Gazebo GUI on screen; Foxglove: ws://localhost:8765"
+#   - Gazebo window opens with 5 quads on the ground.
+#   - Foxglove Studio -> ws://localhost:8765 (layout: ros2_ws/src/swarm_bringup/config/operator.json)
 
 
-# ---------- 2. Take off + engage follow-leader (any host shell) ----------
-docker compose -f docker/compose.swarm.yaml exec companion bash -lc '
+# ---------- 2. WAIT GATE — don't take off until this passes ----------
+# Poll until all 5 drones report `connected: true` AND ekf_ok / home set.
+# Usually 60–120s after `make swarm-up` finishes. Re-run until clean.
+
+docker exec orynth-swarm-companion bash -lc '
+  source /opt/ros/humble/setup.bash && source /opt/overlay/setup.bash
+  for d in 0 1 2 3 4; do
+    s=$(timeout 2 ros2 topic echo --once /drone_$d/mavros/state 2>/dev/null \
+        | grep -E "^(connected|mode|system_status)" | tr "\n" " ")
+    echo "drone_$d: $s"
+  done
+'
+
+# PASS criteria for EVERY drone:
+#   connected: true   mode: GUIDED|STABILIZE|LOITER   system_status: 3 (or 4)
+# If any drone is `connected: false`, wait 15s and re-run. Don't proceed early.
+
+
+# ---------- 3. SITL ONLY: disable IMU pre-arm checks on all 5 FCs ----------
+# Required for the Gazebo demo. Real Jetson hardware does NOT need this.
+# Reason: 5 SITL instances + Gazebo GUI on one host run IMU physics slightly
+# out-of-sync, so the FC trips "Accels inconsistent" / "Gyros inconsistent"
+# even though the drones are healthy. ARMING_CHECK=0 bypasses pre-arm only.
+docker exec orynth-swarm-companion bash -lc '
+  source /opt/ros/humble/setup.bash && source /opt/overlay/setup.bash
+  for d in 0 1 2 3 4; do
+    ros2 service call /drone_$d/mavros/param/set mavros_msgs/srv/ParamSetV2 \
+      "{force_set: true, param_id: ARMING_CHECK, value: {type: 2, integer_value: 0}}" \
+      | tail -2
+  done
+'
+# Expect: success=True for each drone.
+
+
+# ---------- 4. Coordinated takeoff + engage follow-leader ----------
+docker exec orynth-swarm-companion bash -lc '
   source /opt/ros/humble/setup.bash && source /opt/overlay/setup.bash
   ros2 service call /swarm/takeoff swarm_msgs/srv/SwarmTakeoff "{altitude_m: 5.0}"
+  sleep 12   # let leader climb before engaging follow
   ros2 service call /swarm/follow_leader swarm_msgs/srv/FollowLeader \
     "{enable: true, formation_name: diamond, spacing_m: 6.0}"
 '
 
+# WATCH FOR:
+#   - takeoff: success=True, "takeoff: all 5 drones OK"
+#   - follow_leader: success=True, "leader-follow engaged: 'diamond' ..."
+# IF FAIL ("Accels/Gyros inconsistent" in logs): block 3 didn't run — rerun it.
+# IF FAIL ("leader (drone_0) has no pose yet"): leader didn't climb. Re-run block 4.
 
-# ---------- 3. Keyboard teleop for drone_0 (new terminal, interactive TTY) ----------
+
+# ---------- 5. Keyboard teleop for drone_0 (NEW terminal B, interactive) ----------
 docker exec -it orynth-swarm-companion bash -lc \
   'source /opt/overlay/setup.bash && ros2 run swarm_control leader_keyboard'
 
 # Keymap:
-#   w/s/a/d  = N/S/W/E +2 m  (uppercase = +5 m)
-#   r/f      = up/down +1 m  (uppercase = +2 m)
-#   space    = hold (re-send current pose)
-#   h        = show keymap
-#   q / Ctrl-C = quit
+#   w / s / a / d   = N / S / W / E  +2 m   (uppercase = +5 m)
+#   r / f           = up / down      +1 m   (uppercase = +2 m)
+#   space           = hold position (re-send current pose)
+#   h               = show keymap
+#   q / Ctrl-C      = quit
+#
+# WATCH FOR:
+#   - Leader moves smoothly in Gazebo as you press keys.
+#   - Followers track the leader in a diamond, ~6 m spacing, heading-locked.
+#   - Fly slow for the demo — small w/s/a/d nudges look better than capitals.
 
 
-# ---------- 4. Land + tear down ----------
-docker compose -f docker/compose.swarm.yaml exec companion bash -lc '
+# ---------- 6. Land + tear down ----------
+docker exec orynth-swarm-companion bash -lc '
   source /opt/ros/humble/setup.bash && source /opt/overlay/setup.bash
   ros2 service call /swarm/follow_leader swarm_msgs/srv/FollowLeader "{enable: false}"
   ros2 service call /swarm/land std_srvs/srv/Trigger "{}"
 '
 make swarm-down
+
+
+# ---------- Troubleshooting (only if something breaks) ----------
+# takeoff "failed [0,1,2,3,4]"      -> usually IMU pre-arm. Rerun block 3, then 4.
+# follow_leader "no pose yet"       -> leader didn't climb. Re-run takeoff first.
+# Gazebo window never opens         -> `xhost +local:root` then redo block 1.
+# Foxglove won't connect            -> companion not healthy: `docker ps` should show healthy.
+# Teleop keys do nothing            -> ran without `-it` flag; relaunch block 4 exactly as written.
+# Anything stuck                    -> `make swarm-down` then start over from block 1.

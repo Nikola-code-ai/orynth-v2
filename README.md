@@ -24,6 +24,7 @@ Phases 0–2 and **Phase 2.5a** complete; Phase 2.5b (hardware demo) artifacts r
 
 - 5x airframes with ArduPilot Copter 4.5.x flight controllers (Pixhawk-class or F4-class, e.g. Matek F405)
 - 5x Jetson Orin Nano companions (JetPack 6 / Ubuntu 22.04)
+- **SiK / RFD900x telemetry radio per Jetson** — inter-drone link (ADR 0009). Replaces the WiFi/DDS link used in earlier phases.
 - 360° LiDAR on leader (`drone_0`) only
 - RGB camera on every drone
 - Standard ArduPilot sensor suite (IMU, GPS, baro, compass)

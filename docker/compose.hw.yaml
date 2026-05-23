@@ -34,8 +34,12 @@ services:
     devices:
       - "${FC_DEVICE:-/dev/ttyTHS1}:/dev/ttyTHS1"
     environment:
-      - ROS_DOMAIN_ID=42
+      # Single-drone bench bringup — no inter-drone radio in scope here.
+      # DDS is kept on `lo` for parity with the swarm compose (ADR 0009);
+      # a single host can still talk to itself.
+      - ROS_DOMAIN_ID=100
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///workspace/config/networks/cyclonedds_local_only.xml
       # MAVROS serial endpoint. ArduPilot TELEM ports default to 57600 baud; raise to 921600.
       # override FCU_URL if you raised SERIALx_BAUD on the FC.
       - FCU_URL=${FCU_URL:-serial:///dev/ttyTHS1:921600}

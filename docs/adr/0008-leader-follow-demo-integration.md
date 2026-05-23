@@ -54,18 +54,30 @@ the leader's live pose. Native FOLLOW mode is kept as a documented fallback.
 
 ## Consequences
 
-- The Phase 2.5 demo depends on the Cyclone DDS LAN inside the formation loop.
-  Mitigated by a follower-side **leader-pose watchdog**: a stale leader pose
-  makes the follower hold position / fall back to LOITER. Generous spacing and
-  low leader speed keep tracking latency non-critical (see `PLAN.md` § G).
+- **Data path (Phase 2.5b, post-ADR 0009)**: the formation loop runs on the
+  leader Jetson and sees a uniform `/drone_K/mavros/*` topic surface for every
+  drone. For drone_0 (the leader) those topics come from a real MAVROS; for
+  followers, they are *synthesised* locally by `radio_bridge` (role=leader)
+  from inbound `ORYNTH_DRONE_STATE` frames over the SiK/RFD900 radio. The
+  ROS-side controller is unchanged — the transport swap is hidden below it.
+- **Watchdogs (two layers, post-ADR 0009)**:
+  1. The original `leader_pose_timeout_s` watchdog in `swarm_server` (Phase
+     2.5a) is unchanged — it still freezes followers on the last good
+     reference if the leader pose ages past threshold.
+  2. New `radio_bridge` follower-side watchdog: BRAKE after
+     `radio_loss_brake_s` (default 2 s), DISARM after
+     `radio_loss_disarm_s` (default 10 s) of radio silence. The follower
+     does not wait for the leader to notice — it brings the airframe to
+     safety on its own.
 - `formation.py` is implemented reference-agnostic from Phase 2, so the demo
   feeds it a live leader pose with no rewrite.
 - **Fallback**: if ROS-side tracking is too jittery on hardware, switch
   followers to native FOLLOW mode — set `FOLL_ENABLE`, `FOLL_SYSID`,
   `FOLL_OFS_TYPE`, per-drone `FOLL_OFS_*`, `FOLL_DIST_MAX`, and bridge the
-  leader's `GLOBAL_POSITION_INT` to each follower. The `MavrosAdapter` mode and
-  parameter API already covers the set-up; only the inter-vehicle position
-  bridge is new.
+  leader's `GLOBAL_POSITION_INT` to each follower via the SiK/RFD900 link
+  (it's the same radio either way). The `MavrosAdapter` mode and parameter
+  API already covers the set-up; only the inter-vehicle position bridge is
+  new.
 - Revisit if the demo scope grows toward the Phase 7 field mission, or if
   AP_DDS parity (ADR 0002) changes the bridge options.
 

@@ -38,6 +38,10 @@ Phase 6 (`PLAN.md` § D, Phase 2.5b prerequisite).
       build (leader-follow + watchdog proven in the simulator first).
 - [ ] **Per-airframe calibration** — compass and accelerometer calibrated on
       *every* drone; ESC calibration done; `FRAME_CLASS` / `FRAME_TYPE` set.
+- [ ] **Radio link healthy** — on every Jetson, `/dev/ttyUSB_RFD` is present
+      and `radio_bridge` is running. On the leader Jetson, `ros2 topic echo
+      /radio/link_age_s --once` returns a positive number ≤ 1.0 (not `-1.0`).
+      Procedure in [`radio_link_bringup.md`](radio_link_bringup.md).
 - [ ] **Demo parameters loaded** — `config/ardupilot_params/demo_common.parm` +
       the matching `drone_<N>.parm` on each airframe; FC rebooted
       (see `config/ardupilot_params/README.md`).
@@ -84,8 +88,9 @@ Flight director signs the gate (§ 8) before bringup.
 
 ## 4. Bringup
 
-Per-Jetson setup and the DDS LAN are covered in
-[`jetson_swarm_operations.md`](jetson_swarm_operations.md) § 5. Summary:
+Per-Jetson setup, the radio link, and the per-Jetson local DDS are covered in
+[`jetson_swarm_operations.md`](jetson_swarm_operations.md) § 5 and
+[`radio_link_bringup.md`](radio_link_bringup.md). Summary:
 
 1. **Leader Jetson (drone_0)** — `bash scripts/bringup/demo_swarm.sh up 0`
    (brings up MAVROS + Foxglove + `swarm_server`).
@@ -168,7 +173,7 @@ Any role may call an abort. **Abort is loud and unambiguous.**
 | Any drone behaves unexpectedly / drifts toward another | That safety pilot takes RC, flies clear; operator `/swarm/land`. |
 | Two drones close below the 5 m floor | Flight director calls abort; **all** safety pilots take RC; land all. |
 | Leader-pose watchdog fires unintentionally (`/swarm/status` emergency) | Followers hold automatically; operator disengages `/swarm/follow_leader`; assess link before re-engaging. |
-| WiFi / DDS link lost to a follower | That follower's GCS failsafe (`FS_GCS_ENABLE`) triggers RTL; its safety pilot stands ready on RC. |
+| Radio link lost to a follower | The follower's `radio_bridge` watchdog commands BRAKE after 2 s of silence and DISARM after 10 s. The follower's safety pilot stands ready on RC and can take control instantly. |
 | Geofence breach | FC auto-RTL (`FENCE_ACTION 1`); safety pilot monitors, takes RC if needed. |
 | Low battery on any drone | That FC auto-RTL; land the rest in good order. |
 | Any doubt | Land. The demo is not worth an incident. |

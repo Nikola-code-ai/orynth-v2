@@ -1,0 +1,14 @@
+# Stable device-name rule for the Orynth inter-drone radio (RFD900x / SiK).
+#
+# The radio's USB-UART (FTDI FT232 / FT231X on most RFD900x kits) shows up as
+# /dev/ttyUSB0..N depending on plug order. The rule below pins it to
+# /dev/ttyUSB_RFD so docker/compose.demo.yaml can map it deterministically.
+#
+# Default VID/PID matches stock RFD900x. If `lsusb` shows different values
+# (e.g. CP2102-based variants, RFD900a, RFD900u), adjust below and re-run:
+#   sudo udevadm control --reload && sudo udevadm trigger
+#
+# Procedure and verification: docs/runbooks/radio_link_bringup.md § 3.
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6015", SYMLINK+="ttyUSB_RFD", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", SYMLINK+="ttyUSB_RFD", MODE="0666"

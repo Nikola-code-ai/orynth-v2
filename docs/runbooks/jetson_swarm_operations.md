@@ -16,36 +16,55 @@ and how to command it.
 ## 1. Topology — what runs where
 
 Each drone carries **one Jetson Nano** wired to **one ArduPilot flight
-controller** over serial. The Jetsons share a WiFi LAN and one ROS 2 graph
-(`ROS_DOMAIN_ID=42`, Cyclone DDS).
+controller** over serial **and** one SiK / RFD900x telemetry radio over USB.
+The Jetsons no longer share a ROS 2 graph (ADR 0009): each has its own
+`ROS_DOMAIN_ID = 100 + DRONE_ID` and DDS is bound to `lo` only. Cross-drone
+traffic rides MAVLink over the radio, via `radio_bridge` (package
+`swarm_radio`).
 
 ```
-   drone_0 Jetson  (LEADER / ground hub)        drone_1..4 Jetsons (followers)
-   ├─ MAVROS  /drone_0/mavros/*                 ├─ MAVROS /drone_<N>/mavros/*
-   ├─ Foxglove bridge   :8765                   └─ (MAVROS only)
+   drone_0 Jetson  (LEADER / ground hub)            drone_1 Jetson  (follower)
+   ├─ MAVROS  /drone_0/mavros/*  (real FC link)     ├─ MAVROS /drone_1/mavros/*
+   ├─ radio_bridge  role=leader                     ├─ radio_bridge role=follower
+   │    synthesises /drone_1/mavros/* from radio    │    publishes drone_1 state
+   │    forwards swarm_server setpoints to radio    │    receives setpoints
+   ├─ Foxglove bridge   :8765                       └─ (no swarm_server here)
    └─ swarm_server  →  /swarm/* services
-            │                                          │
-            └──────────── Cyclone DDS WiFi LAN ─────────┘
-                          ROS_DOMAIN_ID = 42
+            │                                                │
+            └─── SiK / RFD900x  MAVLink radio (multipoint) ───┘
+                 ORYNTH_DRONE_STATE / ORYNTH_SETPOINT /
+                 ORYNTH_COMMAND / ORYNTH_ACK / ORYNTH_HEARTBEAT
    Operator laptop: Mission Planner / QGC (MAVLink safety) + Foxglove (ROS view)
 ```
 
 **Hardware Prerequisites for the Swarm:**
-- **WiFi Access Point:** The Jetsons do not form an ad-hoc mesh. You must have a dedicated outdoor-rated WiFi Access Point (e.g., Ubiquiti Bullet) configured with static IPs (e.g., `192.168.42.x`) that all Jetsons connect to.
+- **SiK / RFD900x radios:** one per Jetson, USB-attached (e.g.
+  `/dev/ttyUSB_RFD`). Configure in **multipoint mode**: leader = base node,
+  follower(s) = remote nodes. Wiring + firmware procedure in
+  [`radio_link_bringup.md`](radio_link_bringup.md).
+- **(Optional) WiFi LAN:** still useful for Foxglove and developer SSH into the
+  leader Jetson. No longer carries inter-drone traffic. A dropped WiFi has
+  zero effect on the formation loop — the radio is what matters now.
 - **Power Supply:** The Orin Nanos draw up to 25W under load (YOLO + LIO + max perf). Do **not** power them from the ArduPilot power module. Use a dedicated high-quality 5V/5A+ BEC per Jetson directly wired to the battery.
 - **Storage:** Boot from an NVMe SSD, not a microSD card. MicroSD cards will fail quickly under `rosbag2` logging and Docker layer filesystem writes.
-- **Time Sync:** Swarm formation tracking relies heavily on synchronized clocks. You must configure `Chrony` (NTP) or `PTP` across the WiFi LAN so the Jetsons are within 10ms of each other. A drifting clock will cause TF lookup failures and false-positive leader-pose watchdog triggers.
+- **Time Sync:** Formation tracking benefits from synchronised clocks. The
+  `radio_bridge` watchdog uses local monotonic time, but timestamps in
+  `/swarm/status` and bag recordings come from the system clock — configure
+  `Chrony` (NTP) on the leader Jetson and keep followers within ~50 ms.
 
-- **Every Jetson** runs one namespaced MAVROS instance against its FC.
+- **Every Jetson** runs one namespaced MAVROS instance against its FC **and**
+  one `radio_bridge` instance against its radio.
 - **The leader's Jetson (drone_0)** additionally runs the Foxglove bridge and
-  `swarm_server` — the orchestrator that drives all five drones. It is the
-  "ground hub": all `/swarm/*` service calls go here.
-- `swarm_server` reaches every follower's MAVROS over the DDS LAN — there is no
-  MAVLink mesh between flight controllers (ADR 0008).
+  `swarm_server` — the orchestrator that drives every drone. All `/swarm/*`
+  service calls go here. `swarm_server` sees a uniform `/drone_K/mavros/*`
+  topic surface for every drone; for follower drones those topics are
+  synthesised by the leader-side `radio_bridge` from inbound radio frames.
+- There is no MAVLink mesh between flight controllers — radios are on the
+  Jetson side, not the FC side (ADR 0009).
 
-One Jetson = one `DRONE_ID` (0..4). `SYSID_THISMAV = DRONE_ID + 1` on the FC,
+One Jetson = one `DRONE_ID` (0..N-1). `SYSID_THISMAV = DRONE_ID + 1` on the FC,
 MAVROS `tgt_system = DRONE_ID + 1`, namespace `/drone_<DRONE_ID>` — all three
-must agree (`PLAN.md` § G).
+must agree (`PLAN.md` § G). `ROS_DOMAIN_ID = 100 + DRONE_ID` per Jetson.
 
 ---
 
@@ -102,24 +121,33 @@ Verify per drone:
 python3 scripts/hardware/fc_link_test.py --port /dev/ttyTHS1 --baud 921600
 ```
 
-### 2.5 Assign a static IP and the DDS peer list
+### 2.5 Set up the SiK / RFD900x radio
 
-Give each Jetson a fixed LAN address — the scheme the Cyclone DDS template
-assumes is `192.168.42.10` + `DRONE_ID` (`.10`=drone_0 … `.14`=drone_4), GCS
-`.1`.
+Inter-drone traffic rides this radio (ADR 0009). Per Jetson:
 
-WiFi access points usually drop multicast, so DDS discovery needs an explicit
-peer list. Per Jetson, copy the template and fill it in:
+1. Plug the radio into a USB port. Confirm a `/dev/ttyUSB*` shows up
+   (`ls /dev/ttyUSB*`).
+2. Create a stable udev symlink so the device name does not change:
 
-```sh
-cp config/networks/cyclonedds_drone_template.xml \
-   config/networks/cyclonedds_drone_$DRONE_ID.xml
-# edit: set NetworkInterfaceAddress to the WiFi iface (e.g. wlan0) and list
-# every drone + GCS IP under <Peers> (the template is pre-populated for
-# 192.168.42.10-14 + .1 — adjust to your LAN).
-```
+   ```sh
+   sudo cp config/udev/99-orynth-rfd900.rules /etc/udev/rules.d/
+   sudo udevadm control --reload && sudo udevadm trigger
+   ls -l /dev/ttyUSB_RFD                # should now exist
+   ```
 
-It is consumed by `compose.demo.yaml` via `CYCLONEDDS_URI` (§ 5).
+3. Configure the radio firmware (multipoint mode, distinct `NODEID`,
+   matching `NETID`, leader = base node). Full procedure with the AT-command
+   sequence is in [`radio_link_bringup.md`](radio_link_bringup.md).
+4. **Bench-test the link before any ROS bringup.** Run the two structured
+   bench tests in [`radio_bench_tests.md`](radio_bench_tests.md) — link
+   chat with no FC, then a props-off motor spin via the radio. These catch
+   the high-yield failure modes (`NETID` mismatch, udev rule, FC UART) in
+   minutes rather than during full swarm bringup.
+
+No DDS peer list is needed any more. The Cyclone DDS config used on hardware
+is `config/networks/cyclonedds_local_only.xml`, which binds DDS to `lo`. The
+old `cyclonedds_drone_template.xml` is retained as a legacy fallback only —
+do not use it on airframes.
 
 ### 2.6 Build the base image
 
@@ -196,27 +224,28 @@ The full service surface is § 6.
 
 ## 5. The swarm — bring up
 
-Five Jetsons, one ROS graph. **Leader first.**
+N Jetsons, each with its own ROS graph, joined by the SiK/RFD900x radio.
+**Leader first.**
 
 On the leader Jetson (drone_0):
 
 ```sh
 cd ~/orynth-v2/v2
-export CYCLONEDDS_URI=file:///workspace/config/networks/cyclonedds_drone_0.xml
-bash scripts/bringup/demo_swarm.sh up 0      # MAVROS + Foxglove + swarm_server
+bash scripts/bringup/demo_swarm.sh up 0      # MAVROS + radio_bridge(leader) + Foxglove + swarm_server
 ```
 
-On **each** follower Jetson (drone_1 … drone_4), with that drone's id:
+On **each** follower Jetson, with that drone's id:
 
 ```sh
 cd ~/orynth-v2/v2
-export CYCLONEDDS_URI=file:///workspace/config/networks/cyclonedds_drone_1.xml
-bash scripts/bringup/demo_swarm.sh up 1      # MAVROS only
+bash scripts/bringup/demo_swarm.sh up 1      # MAVROS + radio_bridge(follower)
 ```
 
-`CYCLONEDDS_URI` points at the per-drone peer config from § 2.5 (the path is the
-in-container mount `/workspace/config/...`). `compose.demo.yaml` uses
-`network_mode: host` so the Jetsons discover each other over the physical WiFi.
+`compose.demo.yaml` passes the radio device (`/dev/ttyUSB_RFD`) into the
+container and configures `radio_bridge` automatically: leader role for
+drone_0 (`WITH_SWARM_SERVER=1`), follower role otherwise. DDS is bound to
+`lo` per Jetson via `config/networks/cyclonedds_local_only.xml`; you do
+**not** need to set `CYCLONEDDS_URI` manually any more.
 
 Each `up` blocks until *that* drone's FC link is live. Then run the swarm-wide
 preflight gate from the leader Jetson:
@@ -337,16 +366,27 @@ Gazebo version.
 
 ## 8. Failsafes and the leader-pose watchdog
 
-Three independent layers protect the swarm:
+Four independent layers protect the swarm:
 
 - **Leader-pose watchdog** (`swarm_server`). If the leader's pose goes stale —
-  WiFi/DDS dropout — for longer than `leader_pose_timeout_s` (default 1.5 s),
-  the followers **freeze on the last good leader reference** (hold position)
-  instead of chasing a stale setpoint, and `/swarm/status` raises the emergency.
-  Exercise it without a real dropout:
-  `ros2 param set /swarm_server simulate_leader_dropout true` (then `false`).
-- **ArduPilot GCS failsafe** (`FS_GCS_ENABLE 1`). If a follower loses the
-  MAVLink heartbeat from its companion, its FC triggers RTL.
+  the leader Jetson's view of the leader pose ages past
+  `leader_pose_timeout_s` (default 1.5 s) — followers **freeze on the last
+  good leader reference** (hold position) instead of chasing a stale
+  setpoint, and `/swarm/status` raises the emergency. On the radio link,
+  this watchdog ages out *the leader-side `radio_bridge`'s synthesised
+  pose for the leader itself* (drone_0's real MAVROS, not synthesised) and
+  the synthesised follower poses identically. Exercise it without a real
+  dropout: `ros2 param set /swarm_server simulate_leader_dropout true`
+  (then `false`).
+- **Radio-link watchdog** (`radio_bridge`, follower role). If a follower
+  loses leader frames for `radio_loss_brake_s` (default 2.0 s), the
+  follower commands its FC into **BRAKE** locally. After
+  `radio_loss_disarm_s` (default 10.0 s) without a frame, the follower
+  **disarms** itself. The follower does not wait for the leader to notice
+  — it brings the airframe to safety on its own.
+- **ArduPilot GCS failsafe** (`FS_GCS_ENABLE 1`). If a follower's FC loses
+  the MAVLink heartbeat from MAVROS on its own Jetson, the FC triggers RTL.
+  (Now intra-Jetson only, not inter-Jetson.)
 - **Safety pilot RC override.** One pilot per drone, transmitter live. Switching
   to LOITER/LAND on RC overrides every companion command — the last line of
   defence (`first_flight.md` § 6).
@@ -374,9 +414,10 @@ Power the flight controllers down only after the companions have stopped.
 | `up` healthcheck times out | MAVROS never reached `connected: true`. Run `scripts/hardware/fc_link_test.py` — TX/RX swapped, baud ≠ `SERIALx_BAUD`, console getty holding the port, or FC unpowered. |
 | Container exits / image won't run | L4T mismatch — re-check § 2.1 (`/etc/nv_tegra_release`). |
 | `preflight` stuck on a follower | That drone has no link, no EKF global origin (poor GPS), or battery ≤ 90%. The line names which check failed. |
-| `swarm_server` sees only some drones | DDS discovery — confirm `CYCLONEDDS_URI` peer list has every IP, all Jetsons on `ROS_DOMAIN_ID=42`, `network_mode: host` in effect. |
+| `swarm_server` sees only some drones | Radio link — on the leader, check `ros2 topic echo /radio/link_age_s`. A finite age means at least one peer is alive; `-1.0` means no peer is reachable. Confirm follower's `radio_bridge` is running (`docker logs orynth-demo-<N>`) and the RFD900s are in the same `NETID` (see `radio_link_bringup.md`). |
 | `/swarm/follow_leader` rejected "no pose yet" | The leader is not airborne / not publishing pose — take off first. |
-| Followers do not track the leader | Leader pose stale → check the watchdog/emergency on `/swarm/status`; check the WiFi link to the leader Jetson. |
+| Followers do not track the leader | Either the leader-pose watchdog has fired (check `/swarm/status` emergency) or the radio link is stale (check `/radio/link_age_s`). |
+| `/radio/link_age_s = -1` | No frames from any peer yet. Confirm `radio_bridge` is up on every Jetson, `/dev/ttyUSB_RFD` is present, and radio firmware is configured per `radio_link_bringup.md`. |
 | Two MAVROS instances collide / one drops | Duplicate system id — confirm each FC's `SYSID_THISMAV = DRONE_ID + 1` (§ 2.4). |
 | `/drone_<N>/mavros/local_position/pose` silent | FC not streaming — the `SRn_*` rates in `demo_common.parm` target the wrong serial port; set them for the port the Jetson uses. |
 
@@ -400,8 +441,11 @@ Power the flight controllers down only after the companions have stopped.
 ## 12. See also
 
 - [`first_flight.md`](first_flight.md) — the Phase 2.5b flight procedure.
+- [`radio_link_bringup.md`](radio_link_bringup.md) — SiK/RFD900x firmware, wiring, udev, smoke test.
+- [`radio_bench_tests.md`](radio_bench_tests.md) — bench chat + props-off motor spin over the radio.
 - [`../../scripts/hardware/README.md`](../../scripts/hardware/README.md) — bench link + motor test.
 - [`../../config/ardupilot_params/README.md`](../../config/ardupilot_params/README.md) — demo parameters.
 - [`sitl_swarm_dev.md`](sitl_swarm_dev.md) — the SITL swarm dev stack.
 - [ADR 0008](../adr/0008-leader-follow-demo-integration.md) — leader-follow design.
+- [ADR 0009](../adr/0009-mavlink-radio-supersedes-dds-intra-swarm.md) — radio inter-drone transport.
 - `COMMANDS.md` — the full reproducible command reference.

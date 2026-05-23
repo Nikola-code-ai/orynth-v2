@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Cyclone DDS configuration: loopback only (ADR 0009).
+
+  The default DDS configuration for hardware drones. Each Jetson's ROS 2
+  graph is isolated to that Jetson — inter-drone communication goes over
+  the SiK/RFD900 radio, NOT over DDS. This config:
+
+    * binds DDS to the loopback interface (`lo`) so packets never leave the
+      Jetson even if WiFi is up,
+    * keeps multicast loopback enabled so intra-host nodes still discover
+      each other,
+    * declares no peers — there is no peer-list discovery to maintain.
+
+  Pair this with a unique `ROS_DOMAIN_ID` per drone (see
+  docker/compose.demo.yaml, where it is set to `100 + DRONE_ID`). Both are
+  defence-in-depth: even if one mechanism breaks, the other prevents
+  cross-Jetson DDS bleed.
+-->
+<CycloneDDS xmlns="https://cdds.io/config" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+  <Domain id="any">
+    <General>
+      <NetworkInterfaceAddress>lo</NetworkInterfaceAddress>
+      <AllowMulticast>spdp</AllowMulticast>
+      <EnableMulticastLoopback>true</EnableMulticastLoopback>
+      <MaxMessageSize>65500B</MaxMessageSize>
+    </General>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <!-- Intentionally no <Peers>: cross-drone traffic uses radio, not DDS. -->
+    </Discovery>
+    <Internal>
+      <Watermarks>
+        <WhcHigh>500kB</WhcHigh>
+      </Watermarks>
+    </Internal>
+  </Domain>
+</CycloneDDS>

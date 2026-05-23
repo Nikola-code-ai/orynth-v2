@@ -1,0 +1,106 @@
+<?xml version="1.0"?>
+<!--
+  Orynth swarm MAVLink dialect.
+
+  Compact custom messages carried over SiK/RFD900 radio links between the
+  leader Jetson and follower Jetsons. Each Jetson runs `radio_bridge` (package
+  swarm_radio) which encodes/decodes these messages to/from the local ROS 2
+  graph. See docs/adr/0009-mavlink-radio-supersedes-dds-intra-swarm.md.
+
+  Message IDs 220-224 are inside the 180-229 range conventionally reserved for
+  user/experimental dialects, well away from common.xml and ardupilotmega.xml.
+
+  Frame conventions (apply to ORYNTH_DRONE_STATE and ORYNTH_SETPOINT):
+    - x, y, z are local ENU metres in the swarm field frame (the same frame
+      MavrosAdapter uses, established at follow_leader engage via the
+      `field_offsets` calibration).
+    - yaw_rad is ENU heading, radians CCW from East.
+-->
+<mavlink>
+  <include>common.xml</include>
+  <version>1</version>
+  <dialect>220</dialect>
+
+  <enums>
+    <enum name="ORYNTH_ROLE">
+      <description>Role of the node emitting an ORYNTH_HEARTBEAT.</description>
+      <entry value="0" name="ORYNTH_ROLE_LEADER"/>
+      <entry value="1" name="ORYNTH_ROLE_FOLLOWER"/>
+    </enum>
+
+    <enum name="ORYNTH_CMD">
+      <description>Swarm-level commands broadcast from leader to followers.</description>
+      <entry value="0" name="ORYNTH_CMD_NOOP"/>
+      <entry value="1" name="ORYNTH_CMD_ARM"/>
+      <entry value="2" name="ORYNTH_CMD_DISARM"/>
+      <entry value="3" name="ORYNTH_CMD_TAKEOFF"/>
+      <entry value="4" name="ORYNTH_CMD_LAND"/>
+      <entry value="5" name="ORYNTH_CMD_ABORT"/>
+      <entry value="6" name="ORYNTH_CMD_SET_MODE_GUIDED"/>
+      <entry value="7" name="ORYNTH_CMD_SET_MODE_BRAKE"/>
+    </enum>
+  </enums>
+
+  <messages>
+    <message id="220" name="ORYNTH_DRONE_STATE">
+      <description>Follower's live pose + state, sent to the leader at 10 Hz.</description>
+      <field type="uint64_t" name="time_boot_ms">Milliseconds since system boot.</field>
+      <field type="uint8_t"  name="drone_id">Logical drone id (0 = leader, 1..N = followers).</field>
+      <field type="float"    name="x">ENU x position in field frame, metres.</field>
+      <field type="float"    name="y">ENU y position in field frame, metres.</field>
+      <field type="float"    name="z">ENU z position in field frame, metres.</field>
+      <field type="float"    name="yaw_rad">ENU heading, radians CCW from East.</field>
+      <field type="uint8_t"  name="armed">1 if armed, 0 otherwise.</field>
+      <field type="uint8_t"  name="ekf_ok">1 if EKF reports healthy, 0 otherwise.</field>
+      <field type="uint8_t"  name="battery_pct">Battery state of charge, 0-100.</field>
+      <field type="char"     name="mode" length="8">FCU flight-mode string, null-padded.</field>
+    </message>
+
+    <message id="221" name="ORYNTH_SETPOINT">
+      <description>Leader-issued position setpoint for a specific follower at 10 Hz.</description>
+      <field type="uint64_t" name="time_boot_ms">Milliseconds since system boot.</field>
+      <field type="uint8_t"  name="drone_id">Target follower's logical drone id.</field>
+      <field type="float"    name="x">ENU x target, metres.</field>
+      <field type="float"    name="y">ENU y target, metres.</field>
+      <field type="float"    name="z">ENU z target, metres.</field>
+      <field type="float"    name="yaw_rad">ENU yaw target, radians.</field>
+      <field type="uint16_t" name="reference_age_ms">Age of the leader pose underlying this setpoint, ms (watchdog).</field>
+    </message>
+
+    <message id="222" name="ORYNTH_COMMAND">
+      <description>One-shot command from leader to a follower (or all followers if drone_id=255).</description>
+      <field type="uint64_t" name="time_boot_ms">Milliseconds since system boot.</field>
+      <field type="uint8_t"  name="drone_id">Target follower's logical drone id (255 = broadcast).</field>
+      <field type="uint16_t" name="seq">Sequence number for ACK matching.</field>
+      <field type="uint8_t"  name="cmd" enum="ORYNTH_CMD">Command identifier.</field>
+      <field type="float"    name="param_f">Command parameter (e.g. takeoff altitude).</field>
+    </message>
+
+    <message id="223" name="ORYNTH_ACK">
+      <description>Follower's acknowledgement of an ORYNTH_COMMAND.</description>
+      <field type="uint64_t" name="time_boot_ms">Milliseconds since system boot.</field>
+      <field type="uint8_t"  name="drone_id">Acking drone's logical id.</field>
+      <field type="uint16_t" name="seq">Sequence number from the original command.</field>
+      <field type="uint8_t"  name="success">1 on success, 0 on failure.</field>
+      <field type="char"     name="message" length="40">Short result string, null-padded.</field>
+    </message>
+
+    <message id="224" name="ORYNTH_HEARTBEAT">
+      <description>Liveness beacon, sent at 2 Hz by every node on the radio.</description>
+      <field type="uint64_t" name="time_boot_ms">Milliseconds since system boot.</field>
+      <field type="uint8_t"  name="drone_id">Logical drone id of the sender.</field>
+      <field type="uint8_t"  name="role" enum="ORYNTH_ROLE">Sender's role on the radio.</field>
+      <field type="uint32_t" name="uptime_s">Seconds since bridge node start.</field>
+    </message>
+
+    <message id="225" name="ORYNTH_MOTOR_TEST">
+      <description>Bench-only: ask a drone to spin one motor at a low throttle for a short duration. Props MUST be off. Acked via ORYNTH_ACK with matching seq.</description>
+      <field type="uint64_t" name="time_boot_ms">Milliseconds since system boot.</field>
+      <field type="uint8_t"  name="drone_id">Target drone's logical id (255 = broadcast).</field>
+      <field type="uint16_t" name="seq">Sequence number for ACK matching.</field>
+      <field type="uint8_t"  name="motor_index">Motor number, 1..8 (ArduPilot motor index).</field>
+      <field type="uint8_t"  name="throttle_pct">Throttle percentage, 0..30 (clamped server-side to 30).</field>
+      <field type="uint8_t"  name="duration_s">Spin duration in seconds, 1..10 (clamped server-side to 10).</field>
+    </message>
+  </messages>
+</mavlink>

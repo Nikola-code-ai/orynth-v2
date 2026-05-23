@@ -79,6 +79,14 @@ SITL instance N exposes MAVLink TCP on `5760+N*10`. `swarm_server` services:
 `swarm_control/swarm_server_node.py`; full command reference in
 `COMMANDS.md` § Phase 2.
 
+> **SITL keeps Cyclone DDS on loopback.** ADR 0009 swapped DDS for a SiK/RFD900
+> radio between drones *in hardware*. The Gazebo SITL swarm still runs all
+> five drones on `127.0.0.1` under one DDS graph — this is fine because it's
+> a single host. The `swarm_radio.radio_bridge` node is **not** part of
+> `make swarm-up`. A simulated-radio mode (UDP loopback with bandwidth and
+> latency injection) is on the roadmap for validating radio failure modes in
+> sim; out-of-scope for Phase 2.5b.
+
 ## Common gotchas (swarm)
 
 - **Gazebo GUI does not open (`make swarm-up`)**: needs an X server and
