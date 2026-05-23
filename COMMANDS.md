@@ -1,313 +1,212 @@
 # Orynth v2 — Command Reference
 
-> Step-by-step commands to reproduce and verify each phase. Companion to
-> `PLAN.md` (what & why) and `WORKFLOW.md` (status).
->
-> **Conventions**
-> - All commands run from the repo root (`v2/`) unless stated otherwise.
-> - `$` denotes a host shell; commands inside a container are noted as such.
-> - No local ROS 2 install is required — the workspace builds and tests
->   *inside* the `orynth-base` Docker image.
-> - **No step drops you into an interactive container.** Every container step
->   is an ephemeral `docker run --rm` or a `docker compose` service that runs
->   one command and exits. `make shell` is the only interactive entry point.
-> - `make` wraps the common Phase 0/1 commands — run `make help` for the list.
+Step-by-step commands to reproduce and verify each phase. Companion to
+[`PLAN.md`](PLAN.md) (what & why) and [`WORKFLOW.md`](WORKFLOW.md) (status).
 
----
+For the big-picture, picture-rich walkthrough of how everything fits together,
+see [`docs/architecture/end_to_end/end_to_end_setup.pdf`](docs/architecture/end_to_end/end_to_end_setup.pdf).
+
+## Conventions
+
+- All commands run from the repo root (`v2/`) unless stated otherwise.
+- `$` is a host shell. Nothing drops you into a long-lived container — every
+  containerised step is a `docker run --rm` or a `docker compose` service.
+  `make shell` is the only interactive container entry point.
+- `make help` lists every target.
 
 ## Prerequisites
 
-| Tool | Version | Used for |
-|---|---|---|
-| Docker Engine | 24+ | base image build, containerised colcon |
-| Docker buildx | 0.12+ | multi-arch build, digest resolution |
-| git | 2.30+ | clone, pin resolution (`git ls-remote`) |
-| Python 3 | 3.10+ | `pre-commit` (in a venv — see step 0.4) |
+| Tool          | Version | Why |
+|---------------|---------|-----|
+| Docker Engine | 24+     | base image build, containerised colcon, compose |
+| Docker buildx | 0.12+   | multi-arch build, digest resolution |
+| git           | 2.30+   | clone, pin resolution |
+| Python 3      | 3.10+   | `pre-commit` (in a venv) |
 
-Verify:
+## CI gate map
 
-```bash
-$ docker --version
-$ docker buildx version
-$ git --version
-$ python3 --version
-```
+Every CI workflow has a local one-liner. Reproduce a red CI job by running its
+local equivalent.
+
+| Workflow              | When it runs            | Local equivalent       |
+|-----------------------|-------------------------|------------------------|
+| `lint.yml`            | every push / PR         | `make lint`            |
+| `unit.yml`            | every push / PR         | `make test`            |
+| `sitl_smoke.yml` (1-drone) | every PR           | `make sitl-smoke`      |
+| `sitl_smoke.yml` (5-drone swarm) | nightly      | `make swarm-smoke`     |
+| `sitl_smoke.yml` (leader-follow) | nightly      | `make leaderfollow-smoke` |
+| `docker_build.yml`    | `main`, docker/ changes | `make base` (amd64 only) |
 
 ---
 
 ## Phase 0 — Repo scaffold + CI + Docker baseline
 
-Phase 0 produces a reproducible build/test/lint baseline. Reproduce it in six
-steps. Total time on a fresh clone: well under 10 minutes (the base image
-build dominates, ~3–6 min on a warm Docker cache).
+Reproducible build / test / lint baseline.
 
-### 0.1 — Clone
+### 1. Clone
 
-```bash
+```sh
 $ git clone https://github.com/Nikola-code-ai/orynth-v2.git
 $ cd orynth-v2
 ```
 
-### 0.2 — Build the base image (amd64)
+### 2. Build + test + lint
 
-The base image is ROS 2 Humble + MAVROS + Cyclone DDS + the common tooling,
-pinned by SHA256 digest (ADR 0007).
-
-```bash
-$ docker buildx build --load -f docker/base.Dockerfile -t orynth-base:dev .
+```sh
+$ make base        # ~3-6 min on a warm cache (the image dominates)
+$ make test        # colcon build + colcon test inside orynth-base
+$ make lint        # pre-commit in a venv
 ```
 
-Expected: image `orynth-base:dev` (~3.8 GB), exit 0.
+Expected: image `orynth-base:dev` (~3.8 GB); the cumulative test suite (3 at
+Phase 0, 22 / 48 / 55 as later phases land); every pre-commit hook `Passed`.
 
-> **Multi-arch:** CI (`docker_build.yml`) builds `linux/amd64,linux/arm64`. The
-> arm64 leg cross-builds a ~9 GB Jetson base under QEMU and is impractical
-> locally — build amd64 only on a workstation. To attempt both anyway:
-> ```bash
-> $ docker buildx build --platform linux/amd64,linux/arm64 \
->     -f docker/base.Dockerfile -t orynth-base:multi .
-> ```
+### 3. Pin audit
 
-### 0.3 — Build + test the ROS 2 workspace
-
-`colcon` runs inside the base image; the repo is bind-mounted at `/workspace`.
-
-```bash
-$ docker run --rm -v "$PWD":/workspace -w /workspace/ros2_ws orynth-base:dev \
-    bash -c '
-      set -e
-      colcon build --packages-skip swarm_hardware
-      colcon test  --packages-skip swarm_hardware --return-code-on-test-failure
-      colcon test-result --verbose
-    '
-```
-
-Expected: `9 packages finished` for build; `22 tests, 0 errors, 0 failures` for
-test. (`swarm_hardware` is arm64-only and skipped on amd64.) The suite is
-cumulative — 3 tests at Phase 0, 22 once the Phase 1 `swarm_control` adapter
-tests land.
-
-### 0.4 — Lint gate
-
-`pre-commit` covers whitespace/EOF/YAML hooks, `ruff`, and `ruff-format`.
-Ubuntu's system Python is PEP 668 "externally managed", so install into a venv:
-
-```bash
-$ python3 -m venv /tmp/pc-venv
-$ /tmp/pc-venv/bin/pip install pre-commit==3.7.1
-$ /tmp/pc-venv/bin/pre-commit run --all-files
-```
-
-Expected: every hook `Passed` (or `Skipped` for clang-format — no C++ yet).
-
-The lint workflow also rejects unpinned Docker base images. Reproduce that
-check:
-
-```bash
-$ grep -rE "^FROM [^@$]+:[^@]+\s*$" docker/ && echo "UNPINNED FROM" || echo "OK"
-```
-
-### 0.5 — Pin audit
-
-Confirm every digest / git SHA / pip hash is resolved and not drifted:
-
-```bash
+```sh
 $ bash scripts/build/refresh_pins.sh
 ```
 
 Expected: `RESULT: all pins resolvable; digests.lock matches upstream.`
-(`ardupilot` reports `AHEAD` — it is intentionally pinned to tag
-`Copter-4.5.7`, behind upstream HEAD.)
+(`ardupilot` reports `AHEAD` — it is pinned to tag `Copter-4.5.7`, behind
+upstream HEAD by design.)
 
-### 0.6 — Clean up build artefacts
+### 4. Clean up
 
-`colcon` writes `build/ install/ log/` into the bind-mounted workspace as root.
-Remove them via the container (avoids host `sudo`):
-
-```bash
-$ docker run --rm -v "$PWD":/workspace orynth-base:dev \
-    bash -c 'rm -rf /workspace/ros2_ws/build /workspace/ros2_ws/install /workspace/ros2_ws/log'
+```sh
+$ make clean       # removes ros2_ws/{build,install,log} via the container
 ```
 
-### 0.7 — What CI runs
-
-Pushing to a branch / opening a PR triggers three workflows:
-
-| Workflow | Reproduces locally as |
-|---|---|
-| `lint.yml` | step 0.4 (pre-commit + dockerfile-pin-check) |
-| `unit.yml` | steps 0.2 + 0.3 (base image build, then colcon build/test inside it) |
-| `docker_build.yml` | step 0.2 multi-arch (on `main` / docker path changes only) |
-
-Inspect runs:
-
-```bash
-$ gh run list --limit 5
-$ gh run view <run-id>            # summary
-$ gh run view <run-id> --log-failed   # logs of failed steps
-```
+> Raw `docker buildx` + `colcon` invocations (what each `make` target wraps)
+> are in [Appendix A](#appendix-a--phase-0-raw-commands).
 
 ---
 
 ## Phase 1 — Single-drone SITL + MAVROS + Foxglove
 
-Phase 1 brings up one ArduPilot SITL drone and flies an acceptance mission
-through the backend-neutral `MavrosAdapter` (PLAN § D / § I). As in Phase 0,
-nothing runs in an interactive container — `docker compose` services and
-ephemeral `docker run` only.
+Brings up one ArduPilot SITL drone and flies an acceptance mission through the
+backend-neutral `MavrosAdapter`.
 
-> **Shortcut:** every step has a `make` target. `make sitl-smoke` runs
-> 1.1–1.3 end to end; `make sitl-accept` adds 1.5.
+### 1. Run the acceptance gate
 
-### 1.1 — Build the images
-
-`base.Dockerfile` is the Phase 0 baseline. `sitl.Dockerfile` compiles ArduPilot
-Copter at the pinned tag (`Copter-4.5.7`) plus Gazebo Harmonic — the first build
-is slow (~20–35 min, ArduPilot from source); later builds hit the layer cache.
-
-```bash
-$ docker buildx build --load -f docker/base.Dockerfile -t orynth-base:dev .
-$ docker buildx build --load -f docker/sitl.Dockerfile \
-    --build-arg BASE_TAG=orynth-base:dev -t orynth-sitl:dev .
+```sh
+$ make sitl-smoke
 ```
 
-`run_sitl_smoke.sh` (step 1.3) builds both on demand, so this step is optional.
+Builds `orynth-base` + `orynth-sitl` on first run, cold-starts the stack, drives
+`swarm_control.sitl_mission` (GUIDED → arm → takeoff 5 m → waypoint → land),
+tears down. Exit 0 = pass.
 
-### 1.2 — Cold-start the dev stack
+### 2. Record an acceptance bag
 
-```bash
-$ docker compose -f docker/compose.dev.yaml up -d --wait --wait-timeout 300
+```sh
+$ make sitl-accept       # writes accept/phase1.mcap (gitignored)
 ```
 
-Two services come up — `sitl` (arducopter) and `companion` (MAVROS + Foxglove
-bridge via `sitl_single.launch.py`). `--wait` blocks on both healthchecks; the
-PLAN § D gate is a healthy stack in <60 s once images are built. Equivalent:
-`make sitl-up`.
+Captures `/mavros/state`, `/mavros/local_position/pose`,
+`/mavros/setpoint_raw/local`.
 
-### 1.3 — Run the acceptance smoke test
+### 3. Foxglove + live exploration
 
-```bash
-$ bash scripts/ci/run_sitl_smoke.sh        # or: make sitl-smoke
+```sh
+$ make sitl-up           # foreground stack: sitl + companion
+$ # connect Foxglove Studio to ws://localhost:8765
+$ make sitl-down         # tear down
 ```
-
-Builds images if needed, cold-starts the stack, then drives
-`swarm_control.sitl_mission` inside the `companion` container:
-GUIDED → arm → takeoff 5 m → waypoint (10, 0, 5) → land. Exit 0 = pass; the
-stack is torn down on exit.
-
-### 1.4 — Unit gate (adapter contract)
-
-The `MavrosAdapter` contract is covered by `colcon test` with no SITL — the
-tests run it against an in-process fake MAVROS node.
-
-```bash
-$ make test     # colcon build + test inside orynth-base
-```
-
-### 1.5 — Record the acceptance bag
-
-```bash
-$ SMOKE_RECORD=1 bash scripts/ci/run_sitl_smoke.sh   # or: make sitl-accept
-```
-
-Writes `accept/phase1.mcap` (gitignored — archive externally) covering
-`/mavros/state`, `/mavros/local_position/pose`, `/mavros/setpoint_raw/local`.
-
-### 1.6 — Foxglove + teardown
-
-With the stack up (1.2), connect Foxglove Studio to `ws://localhost:8765` —
-`/mavros/local_position/pose` shows live pose, `/mavros/state` shows arm/mode.
-Tear down with:
-
-```bash
-$ docker compose -f docker/compose.dev.yaml down -v --remove-orphans  # make sitl-down
-```
-
-### 1.7 — What CI runs
-
-| Workflow | Reproduces locally as |
-|---|---|
-| `sitl_smoke.yml` (`sitl-single-drone`) | steps 1.1–1.3 (`make sitl-smoke`) |
-| `unit.yml` | step 1.4 (`make test`) |
-
-`sitl_smoke.yml` runs on every PR; image builds use a GitHub Actions layer
-cache, so steady-state runs hit the <8 min smoke-test budget.
 
 ---
 
-## Phase 2 — 5-Drone SITL Swarm + Diamond Formation
+## Phase 1.5 — Single-drone hardware bringup
 
-Phase 2 brings up five ArduPilot SITL drones and flies a diamond-formation
-acceptance mission through `swarm_server_node` (PLAN § D / § I #5). As before,
-nothing runs in an interactive container.
+You have a real airframe wired: flight controller on USB or TELEM, RadioMaster
+RC bound, Jetson on TELEM1. This phase proves the **Jetson↔FC link** before you
+ever touch the swarm. The bench reality of "Mission Planner + RadioMaster on
+one drone" still works exactly as before — this layer just lets the companion
+talk to the same FC over its own UART.
 
-The swarm has two simulation backends, selected by the compose stack — both run
-the *same* `swarm_server` / formation / MAVROS layer:
+> **Mission Planner is the primary GCS** for parameters, modes, failsafes, and
+> geofence (`docs/architecture/overview.md` and
+> `config/ardupilot_params/README.md`). Load the demo params with MP before
+> the companion talks to the FC.
+
+### 1. Load demo parameters via Mission Planner
+
+*Config → Full Parameter List → Load from file* → `config/ardupilot_params/demo_common.parm`
+→ **Write Params** → repeat for `drone_<N>.parm` → reboot the FC. See
+[`config/ardupilot_params/README.md`](config/ardupilot_params/README.md) for the
+per-airframe mapping and the warnings about `BATT_*`, `FENCE_*`, and `SERIAL1_*`.
+
+### 2. Bring up MAVROS against the wired FC
+
+```sh
+$ make hw-up             # docker compose -f docker/compose.hw.yaml up
+$ # Foxglove: connect Studio to ws://localhost:8765
+```
+
+The `companion` container talks to the FC on `serial:///dev/ttyTHS1:57600` by
+default. Change `FCU_URL` in `compose.hw.yaml` if your wiring differs.
+
+### 3. Verify the link
+
+```sh
+$ make hw-check          # runs scripts/hardware/mavros_link_check.sh inside the container
+```
+
+The script confirms `/mavros/state` is publishing, the FC reports a system id,
+and pose streams are alive. The standalone pymavlink probe is also useful when
+MAVROS itself is what you suspect:
+
+```sh
+$ python3 scripts/hardware/fc_link_test.py --port /dev/ttyTHS1 --baud 57600
+```
+
+### 4. Tear down
+
+```sh
+$ make hw-down
+```
+
+> No CI gate — this is hardware. Smoke-tested on a single drone before any
+> Phase 2.5b swarm flight.
+
+---
+
+## Phase 2 — 5-drone SITL swarm + diamond formation
+
+Brings up five SITL drones and flies a diamond-formation acceptance mission
+through `swarm_server_node`. Same `swarm_server` / formation / MAVROS layer for
+both backends:
 
 - **pure-SITL** (`arducopter --model=quad`) — headless, frame-clean, fast; what
-  the acceptance gate and CI run.
-- **Gazebo Harmonic** — the 3D world (ADR 0003), used for the on-screen review.
+  the gate and CI run.
+- **Gazebo Harmonic** — the 3D world (ADR 0003), for on-screen review.
 
-> **Shortcut:** `make swarm-smoke` runs the acceptance gate; `make swarm-up`
-> brings the swarm up with the Gazebo GUI; `make swarm-down` tears it down.
+### 1. Run the acceptance gate
 
-### 2.1 — Build the images
-
-Phase 2 reuses the Phase 1 images (`orynth-base:dev`, `orynth-sitl:dev`):
-
-```bash
-$ docker buildx build --load -f docker/base.Dockerfile -t orynth-base:dev .
-$ docker buildx build --load -f docker/sitl.Dockerfile \
-    --build-arg BASE_TAG=orynth-base:dev -t orynth-sitl:dev .
+```sh
+$ make swarm-smoke
 ```
 
-`sitl_swarm.sh` (step 2.3) builds both on demand, so this step is optional.
+Cold-starts the headless 5-drone stack and drives `swarm_server`:
+`/swarm/takeoff` → `/swarm/engage_formation diamond` → 60 s hold →
+`/swarm/land`. Asserts diamond drift converges under 0.5 m mean. Exit 0 = pass.
 
-### 2.2 — Unit gate
+### 2. On-screen swarm with the Gazebo GUI
 
-The formation geometry, `MavrosAdapter`, the `swarm_server` orchestrator and
-the SITL launcher / world builder are all unit-tested with no SITL:
-
-```bash
-$ make test
+```sh
+$ make swarm-up          # 5 iris drones in Gazebo + Foxglove ready
+$ # Foxglove: import ros2_ws/src/swarm_bringup/config/operator.json
+$ make swarm-down
 ```
 
-Expected: `48 tests, 0 errors, 0 failures` at Phase 2 (the cumulative suite —
-22 at Phase 1, 48 at Phase 2; the Phase 2.5a leader-follow tests raise it to 55).
+Requires a running X server (any Linux desktop session). `xhost +local:root` is
+granted automatically.
 
-### 2.3 — Run the swarm acceptance gate
+### 3. Drive the swarm by hand
 
-```bash
-$ make swarm-smoke        # or: bash scripts/bringup/sitl_swarm.sh
-```
+With the swarm up, services are plain ROS 2:
 
-Builds images if needed, cold-starts the headless five-drone stack, then drives
-`swarm_server`: `/swarm/takeoff` → `/swarm/engage_formation diamond` → 60 s
-hold → `/swarm/land`. It asserts the diamond drift converges under 0.5 m mean
-(PLAN § D, Phase 2) and tears the stack down. Exit 0 = pass.
-
-### 2.4 — Bring up the swarm with the Gazebo GUI
-
-```bash
-$ make swarm-up
-```
-
-Layers `compose.swarm.gui.yaml` over `compose.swarm.yaml`: the `sim` container
-switches to Gazebo Harmonic (`SWARM_GAZEBO=1`), the X11 socket and `/dev/dri`
-are mounted, and `xhost +local:root` is granted. A Gazebo window opens with
-five `iris` drones. Requires a running X server (any Linux desktop session).
-
-### 2.5 — Foxglove operator layout
-
-With the swarm up, connect Foxglove Studio to `ws://localhost:8765` and import
-`ros2_ws/src/swarm_bringup/config/operator.json` — it shows all five drones:
-`/swarm/status`, live poses in 3D, and per-drone altitude.
-
-### 2.6 — Drive the swarm by hand
-
-The `swarm_server` services are plain ROS 2 services — drive them from the
-companion container:
-
-```bash
+```sh
 $ docker compose -f docker/compose.swarm.yaml exec companion bash -lc '
     source /opt/ros/humble/setup.bash && source /opt/overlay/setup.bash
     ros2 service call /swarm/takeoff swarm_msgs/srv/SwarmTakeoff "{altitude_m: 5.0}"
@@ -320,60 +219,29 @@ $ docker compose -f docker/compose.swarm.yaml exec companion bash -lc '
 Formations: `diamond`, `vee`, `column`, `line`. A single drone is detached from
 the formation with `/swarm/drone_<N>/manual_goto`.
 
-### 2.7 — Teardown
-
-```bash
-$ make swarm-down
-```
-
-### 2.8 — What CI runs
-
-| Workflow | Reproduces locally as |
-|---|---|
-| `sitl_smoke.yml` (`sitl-5-drone-swarm`, nightly) | step 2.3 (`make swarm-smoke`) |
-| `unit.yml` | step 2.2 (`make test`) |
-
-The five-drone smoke runs nightly only; PR CI stays single-drone for the
-<8 min budget (PLAN § D).
-
 ---
 
-## Phase 2.5 — Leader-Follow Demo
+## Phase 2.5a — Leader-follow SITL rehearsal
 
-A two-stage milestone (PLAN § D, Phase 2.5; ADR 0008): **2.5a** rehearses
-leader-follow in the SITL swarm; **2.5b** flies it on real airframes. The
-operator manipulates the leader (`drone_0`); the followers shadow its *live*
+The operator manipulates the leader (`drone_0`); followers shadow its *live*
 pose, holding a diamond and tracking it as it moves.
 
-> **Shortcut:** `make leaderfollow-smoke` runs the 2.5a acceptance gate.
+### 1. Run the acceptance gate
 
-### 2.5a.1 — Unit gate
-
-```bash
-$ make test
+```sh
+$ make leaderfollow-smoke
 ```
 
-Expected: `55 tests, 0 errors, 0 failures` — the cumulative suite; the Phase
-2.5a leader-follow + watchdog tests bring it from 48 to 55.
+Cold-starts the 5-drone swarm, runs `/swarm/takeoff` → `/swarm/follow_leader`
+engage → flies the leader via `/swarm/drone_0/manual_goto` → exercises the
+leader-pose watchdog → disengage → `/swarm/land`. Asserts settled follower drift
+< 0.5 m mean and that the watchdog engages on a simulated leader-pose dropout.
 
-### 2.5a.2 — Run the leader-follow acceptance gate
+### 2. Drive leader-follow by hand
 
-```bash
-$ make leaderfollow-smoke    # or: bash scripts/bringup/leaderfollow_sitl.sh
-```
+With the swarm up (`make swarm-up`):
 
-Cold-starts the headless five-drone swarm, then drives `swarm_server`:
-`/swarm/takeoff` → `/swarm/follow_leader` (engage) → flies the leader with
-`/swarm/drone_0/manual_goto` while the four followers track the diamond →
-exercises the leader-pose watchdog → disengage → `/swarm/land`. Asserts the
-settled follower drift stays under 0.5 m mean and that the watchdog engages on
-a simulated leader-pose dropout. Exit 0 = pass.
-
-### 2.5a.3 — Drive leader-follow by hand
-
-With the swarm up (`make swarm-up` for the Gazebo GUI):
-
-```bash
+```sh
 $ docker compose -f docker/compose.swarm.yaml exec companion bash -lc '
     source /opt/ros/humble/setup.bash && source /opt/overlay/setup.bash
     ros2 service call /swarm/takeoff swarm_msgs/srv/SwarmTakeoff "{altitude_m: 5.0}"
@@ -386,45 +254,123 @@ $ docker compose -f docker/compose.swarm.yaml exec companion bash -lc '
   '
 ```
 
-The watchdog is exercised without a real dropout via `ros2 param set
-/swarm_server simulate_leader_dropout true` (then `false`). Foxglove's
-`demo.json` layout shows the live per-follower formation error.
-
-### 2.5b — Hardware demo
-
-The on-hardware flight runs on the Jetson Nanos — one drone per Jetson. Full
-setup and the `/swarm/*` control surface are in
-`docs/runbooks/jetson_swarm_operations.md`; the flight procedure (condensed
-safety gate, roles, abort triggers, sign-off) is `docs/runbooks/first_flight.md`.
-Per-Jetson summary:
-
-```bash
-$ make demo-up DRONE_ID=0      # leader Jetson — MAVROS + Foxglove + swarm_server
-$ make demo-up DRONE_ID=1      # follower Jetson — MAVROS  (repeat for 2..4)
-$ make demo-check              # swarm-wide preflight health gate (leader Jetson)
-$ make demo-down DRONE_ID=<N>  # teardown, per Jetson
-```
-
-### 2.5 — What CI runs
-
-| Workflow | Reproduces locally as |
-|---|---|
-| `sitl_smoke.yml` (`sitl-5-drone-swarm`, nightly) | step 2.5a.2 (`make leaderfollow-smoke`) |
-| `unit.yml` | step 2.5a.1 (`make test`) |
-
-The leader-follow gate runs in the same nightly job as the Phase 2 swarm smoke.
-2.5b is a hardware flight — no CI gate.
+The watchdog is exercised without a real dropout via
+`ros2 param set /swarm_server simulate_leader_dropout true` (then `false`).
+Foxglove `demo.json` shows the live per-follower formation error.
 
 ---
 
-## Appendix A — How the Phase 0 pins were originally resolved
+## Phase 2.5b — Hardware leader-follow demo
+
+One drone per Jetson. Mission Planner remains the per-airframe GCS; the
+companion only drives the autonomous followers. Full procedure (safety gate,
+roles, abort triggers, sign-off) is
+[`docs/runbooks/first_flight.md`](docs/runbooks/first_flight.md); operator
+setup is [`docs/runbooks/jetson_swarm_operations.md`](docs/runbooks/jetson_swarm_operations.md).
+
+### 1. Per-Jetson bringup
+
+On **each** Jetson, picking the correct `DRONE_ID`:
+
+```sh
+$ make demo-up DRONE_ID=0    # leader Jetson — MAVROS + Foxglove + swarm_server
+$ make demo-up DRONE_ID=1    # follower Jetson — MAVROS only; repeat 2..4
+```
+
+### 2. Swarm-wide preflight gate
+
+On the **leader Jetson**:
+
+```sh
+$ make demo-check
+```
+
+Blocks until every drone reports a live FC link, an EKF global origin, and
+battery > 90 %. Prints `PREFLIGHT PASS`. **Do not proceed past a failed
+preflight.**
+
+### 3. Fly
+
+The flight sequence (takeoff → engage → leader RC-flown → watchdog → land) is
+in [`docs/runbooks/first_flight.md`](docs/runbooks/first_flight.md) § 5. Same
+`/swarm/*` services as Phase 2.5a — the only thing that changed is the airframe
+underneath.
+
+### 4. Tear down
+
+Per Jetson:
+
+```sh
+$ make demo-down DRONE_ID=<N>
+```
+
+> No CI gate — this is the hardware acceptance flight.
+
+---
+
+## Appendix A — Phase 0 raw commands
+
+Each step here is what the equivalent `make` target runs. Useful when
+debugging a Make target or porting to another build system.
+
+**Base image build** (what `make base` does):
+
+```sh
+$ docker buildx build --load -f docker/base.Dockerfile -t orynth-base:dev .
+```
+
+Multi-arch (what `docker_build.yml` does on `main` — slow under QEMU, do not
+attempt locally without arm64 hardware):
+
+```sh
+$ docker buildx build --platform linux/amd64,linux/arm64 \
+    -f docker/base.Dockerfile -t orynth-base:multi .
+```
+
+**Workspace build + test** (what `make test` does):
+
+```sh
+$ docker run --rm -v "$PWD":/workspace -w /workspace/ros2_ws orynth-base:dev \
+    bash -c '
+      set -e
+      colcon build --packages-skip swarm_hardware
+      colcon test  --packages-skip swarm_hardware --return-code-on-test-failure
+      colcon test-result --verbose
+    '
+```
+
+**Lint** (what `make lint` does — `pre-commit` in a PEP 668-safe venv):
+
+```sh
+$ python3 -m venv /tmp/pc-venv
+$ /tmp/pc-venv/bin/pip install pre-commit==3.7.1
+$ /tmp/pc-venv/bin/pre-commit run --all-files
+```
+
+The lint workflow also rejects unpinned Docker base images. Reproduce that
+check directly:
+
+```sh
+$ grep -rE "^FROM [^@$]+:[^@]+\s*$" docker/ && echo "UNPINNED FROM" || echo "OK"
+```
+
+**Workspace clean** (what `make clean` does):
+
+```sh
+$ docker run --rm -v "$PWD":/workspace orynth-base:dev \
+    bash -c 'rm -rf /workspace/ros2_ws/build /workspace/ros2_ws/install /workspace/ros2_ws/log'
+```
+
+---
+
+## Appendix B — How the Phase 0 pins were originally resolved
 
 These produced the values committed in `digests.lock`, `orynth.repos`, and
 `requirements.txt`. Re-run them when refreshing a pin (ADR 0007, quarterly).
 
-**Docker base image digests** (manifest-list digest, so multi-arch resolves):
+**Docker base image digests** (manifest-list digest for multi-arch):
 
-```bash
+```sh
 $ docker buildx imagetools inspect ros:humble-ros-base-jammy \
     --format '{{.Manifest.Digest}}'
 $ docker buildx imagetools inspect nvcr.io/nvidia/l4t-jetpack:r36.3.0 \
@@ -433,7 +379,7 @@ $ docker buildx imagetools inspect nvcr.io/nvidia/l4t-jetpack:r36.3.0 \
 
 **External repo git SHAs** (one per entry in `orynth.repos`):
 
-```bash
+```sh
 $ git ls-remote https://github.com/ArduPilot/ardupilot.git refs/tags/Copter-4.5.7
 $ git ls-remote https://github.com/hku-mars/FAST_LIO.git HEAD
 # ...repeat for each repository URL
@@ -441,7 +387,7 @@ $ git ls-remote https://github.com/hku-mars/FAST_LIO.git HEAD
 
 **pip package hashes** (`--require-hashes` needs sdist + wheel sha256):
 
-```bash
+```sh
 $ pip download pexpect==4.9.0 --no-deps --no-binary :none: -d /tmp/pins
 $ pip download pexpect==4.9.0 --no-deps -d /tmp/pins
 $ pip hash /tmp/pins/pexpect-4.9.0*
@@ -449,24 +395,24 @@ $ pip hash /tmp/pins/pexpect-4.9.0*
 
 ---
 
-## Appendix B — Git workflow
+## Appendix C — Git workflow
 
-```bash
+```sh
 $ git add -A
 $ git commit -m "..."        # commits as dev.markovic@protonmail.com
 $ git push origin main
 ```
 
-> Commits on this repo must use the `Nikola-code-ai` identity
-> (`dev.markovic@protonmail.com`). The global git config is already set to it;
-> do not override per-commit.
+Commits on this repo must use the `Nikola-code-ai` identity
+(`dev.markovic@protonmail.com`). The global git config is already set; do not
+override per-commit.
 
 ---
 
 ## Later phases
 
-Phase 3+ command sequences (YOLO human detection, LiDAR mapping, autonomous
-search, HIL, field deployment) are added here as each lands. See
-`docs/runbooks/` for operational runbooks (`sitl_swarm_dev.md`,
-`jetson_swarm_operations.md`, `first_flight.md`), `WORKFLOW.md` for current
-phase status, and `PLAN.md` § D for the roadmap.
+Phase 3+ commands (YOLO human detection, LiDAR mapping, autonomous search, HIL,
+field deployment) land here as each phase does. See
+[`docs/runbooks/`](docs/runbooks/) for operational procedures,
+[`WORKFLOW.md`](WORKFLOW.md) for current status, and [`PLAN.md`](PLAN.md) § D
+for the roadmap.
