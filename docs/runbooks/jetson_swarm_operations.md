@@ -82,8 +82,11 @@ sudo systemctl stop nvgetty && sudo systemctl disable nvgetty
 sudo lsof /dev/ttyTHS1        # expect no output
 ```
 
-Wire **Jetson UART ↔ FC TELEM**, TX/RX crossed, GND common, **no +5V** into the
-Jetson (3 wires only — see `scripts/hardware/README.md` Step 3).
+Wire **Jetson UART ↔ FC serial UART**, TX/RX crossed, GND common, **no +5V**
+into the Jetson (3 wires only). Pixhawk-class boards use the labeled `TELEM1`
+JST-GH connector; F4-class boards (Matek F405 and similar) use the TX/RX
+solder pads of the UART that maps to `SERIAL1` in `demo_common.parm`. See
+`scripts/hardware/README.md` Step 3 for the full table.
 
 ### 2.4 Load the ArduPilot demo parameters
 

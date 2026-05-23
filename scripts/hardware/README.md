@@ -51,18 +51,24 @@ sudo usermod -aG dialout "$USER"
 
 ## Step 3 — Check the wiring
 
-Jetson 40-pin header  ->  FC TELEM port. **Cross TX and RX.** Connect only
-three wires — never run the TELEM port's +5V into the Jetson:
+Jetson 40-pin header  ->  FC serial port. **Cross TX and RX.** Connect only
+three wires — never run +5V from the FC into the Jetson:
 
-| Jetson pin | Signal     | FC TELEM |
-|------------|------------|----------|
-| pin 8      | UART2 TX   | RX       |
-| pin 10     | UART2 RX   | TX       |
-| pin 6 (GND)| GND        | GND      |
+| Jetson pin | Signal     | FC side                           |
+|------------|------------|-----------------------------------|
+| pin 8      | UART2 TX   | RX of the chosen FC UART          |
+| pin 10     | UART2 RX   | TX of the chosen FC UART          |
+| pin 6 (GND)| GND        | GND                               |
+
+Pixhawk-class boards expose a labeled **TELEM1** JST-GH connector — use its
+TX/RX/GND pins (ignore +5V and CTS/RTS). **F4-class boards (Matek F405 and
+similar) have no TELEM connector** — solder to the TX/RX pads of the UART that
+maps to the `SERIALn` you configured in `demo_common.parm` (see the Matek
+datasheet for your variant; default config assumes `SERIAL1`).
 
 Both sides are 3.3V logic — compatible. If the link is flaky, it is usually
 TX/RX swapped, a baud mismatch, or hardware flow control (set the FC's
-`BRD_SERn_RTSCTS = 0` for the TELEM port you used).
+`BRD_SERn_RTSCTS = 0` for the UART you used).
 
 ## Step 4 — Install pymavlink
 
@@ -100,7 +106,9 @@ python3 motor_test.py --port /dev/ttyTHS1 --motor 1 --throttle 8 --timeout 3
 If the FC **rejects** the command: the safety switch is likely still engaged
 (press and hold until the LED is solid, or set `BRD_SAFETY_DEFLT 0`), the
 frame is not configured (`FRAME_CLASS` / `FRAME_TYPE`), or the ESCs are
-unpowered. The vehicle must be disarmed — motor test runs while disarmed.
+unpowered. F4-class boards (Matek F405 and similar) have **no safety switch
+at all** — `BRD_SAFETY_DEFLT 0` is required on those, not optional. The
+vehicle must be disarmed — motor test runs while disarmed.
 
 ## Troubleshooting
 

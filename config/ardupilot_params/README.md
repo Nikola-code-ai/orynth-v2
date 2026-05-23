@@ -51,10 +51,23 @@ These are a **starting point**. Review at least:
 - **`BATT_LOW_VOLT` / `BATT_CRT_VOLT`** — set for your actual pack chemistry
   and cell count. The defaults assume a 4S pack.
 - **`SERIAL1_*` / `SR1_*`** — `demo_common.parm` assumes the Jetson is wired to
-  **TELEM1 = SERIAL1**. If the companion is on another port, set the matching
-  `SERIALn_PROTOCOL 2`, `SERIALn_BAUD`, and `SRn_*` stream rates instead, and
-  point `FCU_URL` at the right baud. MAVROS does not request data streams, so
-  without the `SRn_*` rates `/drone_<N>/mavros/local_position/pose` stays silent.
+  **TELEM1 = SERIAL1**. Pixhawk-class boards expose a labeled `TELEM1` JST-GH
+  connector that maps to `SERIAL1`. **F4-class boards (e.g. Matek F405) expose
+  TX/RX solder pads** — which pad pair corresponds to which `SERIALn` is fixed
+  by that board's hwdef (see the Matek datasheet for your specific variant).
+  If the companion is on another port, set the matching `SERIALn_PROTOCOL 2`,
+  `SERIALn_BAUD`, and `SRn_*` stream rates instead, and point `FCU_URL` at the
+  right baud. MAVROS does not request data streams, so without the `SRn_*`
+  rates `/drone_<N>/mavros/local_position/pose` stays silent.
+- **F4-class boards (Matek F405 and similar)** — confirm the firmware target
+  supports Copter (`MatekF405` / `MatekF405-CTR` do; `MatekF405-Wing`,
+  `MatekF405-SE`, `MatekF405-WSE` are Plane/VTOL targets and will not fly
+  multicopter). These boards have **no hardware safety switch** — set
+  `BRD_SAFETY_DEFLT 0` so arming is not gated on a switch that does not exist.
+  F4 flash limits mean some ArduPilot features (AP_DDS, scripting, ADSB, extra
+  EKF lanes) are not built into the firmware — v2.0.0 only requires MAVLink,
+  which is always present, but the long-term ADR-0002 swap to AP_DDS is **not
+  available** on these boards.
 - **`FENCE_RADIUS` / `FENCE_ALT_MAX`** — size to your actual flight area; the
   swarm must fit inside the fence at full formation spacing.
 - **Airframe tune** — `FRAME_CLASS` / `FRAME_TYPE`, compass and accel

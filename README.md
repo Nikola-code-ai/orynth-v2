@@ -22,7 +22,7 @@ Phases 0–2 and **Phase 2.5a** complete; Phase 2.5b (hardware demo) artifacts r
 
 ## Hardware
 
-- 5x airframes with ArduPilot Copter 4.5.x flight controllers (Pixhawk-class)
+- 5x airframes with ArduPilot Copter 4.5.x flight controllers (Pixhawk-class or F4-class, e.g. Matek F405)
 - 5x Jetson Orin Nano companions (JetPack 6 / Ubuntu 22.04)
 - 360° LiDAR on leader (`drone_0`) only
 - RGB camera on every drone
