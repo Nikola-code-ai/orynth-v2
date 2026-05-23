@@ -1,0 +1,39 @@
+# Orynth v2 — bring up Gazebo swarm + keyboard teleop
+# Run each block in order. Steps 2 and 3 are in separate terminals.
+
+# ---------- 1. Bring up 5-drone Gazebo swarm (host shell, repo root) ----------
+make swarm-up
+
+# Wait ~60-90s for `companion` to go healthy.
+# Foxglove: connect Studio to ws://localhost:8765
+# Optional layout: ros2_ws/src/swarm_bringup/config/operator.json
+
+
+# ---------- 2. Take off + engage follow-leader (any host shell) ----------
+docker compose -f docker/compose.swarm.yaml exec companion bash -lc '
+  source /opt/ros/humble/setup.bash && source /opt/overlay/setup.bash
+  ros2 service call /swarm/takeoff swarm_msgs/srv/SwarmTakeoff "{altitude_m: 5.0}"
+  ros2 service call /swarm/follow_leader swarm_msgs/srv/FollowLeader \
+    "{enable: true, formation_name: diamond, spacing_m: 6.0}"
+'
+
+
+# ---------- 3. Keyboard teleop for drone_0 (new terminal, interactive TTY) ----------
+docker exec -it orynth-swarm-companion bash -lc \
+  'source /opt/overlay/setup.bash && ros2 run swarm_control leader_keyboard'
+
+# Keymap:
+#   w/s/a/d  = N/S/W/E +2 m  (uppercase = +5 m)
+#   r/f      = up/down +1 m  (uppercase = +2 m)
+#   space    = hold (re-send current pose)
+#   h        = show keymap
+#   q / Ctrl-C = quit
+
+
+# ---------- 4. Land + tear down ----------
+docker compose -f docker/compose.swarm.yaml exec companion bash -lc '
+  source /opt/ros/humble/setup.bash && source /opt/overlay/setup.bash
+  ros2 service call /swarm/follow_leader swarm_msgs/srv/FollowLeader "{enable: false}"
+  ros2 service call /swarm/land std_srvs/srv/Trigger "{}"
+'
+make swarm-down
