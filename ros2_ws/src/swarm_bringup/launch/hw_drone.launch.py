@@ -33,8 +33,8 @@ def generate_launch_description() -> LaunchDescription:
     drone_id = int(os.environ.get("DRONE_ID", "0"))
     drone_count = int(os.environ.get("DRONE_COUNT", "5"))
     # ArduPilot TELEM ports default to 57600 baud; raise SERIALx_BAUD and this
-    # to 921600 for the formation telemetry rates.
-    fcu_url = os.environ.get("FCU_URL", "serial:///dev/ttyTHS1:57600")
+    # default to 921600 baud on real hardware to avoid stream choking.
+    fcu_url = os.environ.get("FCU_URL", "serial:///dev/ttyTHS1:921600")
     foxglove_port = os.environ.get("FOXGLOVE_PORT", "8765")
     with_server = os.environ.get("WITH_SWARM_SERVER", "0") == "1"
     leader_timeout = float(os.environ.get("LEADER_POSE_TIMEOUT", "1.5"))

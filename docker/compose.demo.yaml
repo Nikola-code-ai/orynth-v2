@@ -21,7 +21,7 @@
 #   DRONE_COUNT         drones in the swarm               (default 5)
 #   WITH_SWARM_SERVER   1 on the leader's Jetson only     (default 0)
 #   FC_DEVICE           host serial device to the FC      (default /dev/ttyTHS1)
-#   FCU_URL             MAVROS endpoint, serial:///dev:baud (default 57600 baud)
+#   FCU_URL             MAVROS endpoint, serial:///dev:baud (default 921600 baud)
 #   CYCLONEDDS_URI      Cyclone DDS peer-list config       (default unset)
 name: orynth-demo
 
@@ -49,7 +49,7 @@ services:
       - DRONE_ID=${DRONE_ID:-0}
       - DRONE_COUNT=${DRONE_COUNT:-5}
       - WITH_SWARM_SERVER=${WITH_SWARM_SERVER:-0}
-      - FCU_URL=${FCU_URL:-serial:///dev/ttyTHS1:57600}
+      - FCU_URL=${FCU_URL:-serial:///dev/ttyTHS1:921600}
       - FOXGLOVE_PORT=8765
       - LEADER_POSE_TIMEOUT=${LEADER_POSE_TIMEOUT:-1.5}
       - FORMATION_ALT_STEP=0.0

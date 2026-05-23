@@ -10,7 +10,7 @@ This script never arms the vehicle and never commands an actuator, so it is
 safe to run even with propellers attached.
 
 Example:
-    python3 fc_link_test.py --port /dev/ttyTHS1 --baud 57600
+    python3 fc_link_test.py --port /dev/ttyTHS1 --baud 921600
 """
 
 import argparse
@@ -64,8 +64,8 @@ def parse_args():
     p.add_argument(
         "--baud",
         type=int,
-        default=57600,
-        help="baud rate; ArduPilot TELEM ports default to 57600 "
+        default=921600,
+        help="baud rate; ArduPilot TELEM ports default to 921600 "
         "(default: %(default)s)",
     )
     p.add_argument(

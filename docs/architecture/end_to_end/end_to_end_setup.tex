@@ -153,7 +153,7 @@
 
   \draw[link] (rc.south) -- node[linklabel, left]{RC PPM/SBUS} (rc.south |- fc.north);
   \draw[biglink] (mp.south) -- node[linklabel, right]{MAVLink (USB/TELEM2)} (mp.south |- fc.north);
-  \draw[biglink] (fc.south) -- node[linklabel, right]{MAVLink (TELEM1, 57600)} (jet.north);
+  \draw[biglink] (fc.south) -- node[linklabel, right]{MAVLink (TELEM1, 921600)} (jet.north);
   \draw[biglink] (jet.east) -- node[linklabel, above]{ROS 2 / WebSocket} (fx.west);
 \end{tikzpicture}
 \end{center}
@@ -282,7 +282,7 @@ over a well-defined physical link.
   \draw[biglink] (mplaptop.east) -- ++(1.5,0) |- node[linklabel, near end]{USB or SiK telemetry radio} (fc.west);
   \draw[link]    (radio.east) -- ++(1.5,0) |- node[linklabel, near end]{2.4 GHz} (rx.west);
   \draw[link]    (rx.south) -- node[linklabel, right]{PPM/SBUS} (fc.north);
-  \draw[biglink] (fc.south) -- node[linklabel, right]{UART \texttt{TELEM1} @ 57600} (jetson.north);
+  \draw[biglink] (fc.south) -- node[linklabel, right]{UART \texttt{TELEM1} @ 921600} (jetson.north);
 
 \end{tikzpicture}
 \end{center}
@@ -295,9 +295,9 @@ over a well-defined physical link.
 \toprule
 \textbf{Link} & \textbf{Port} & \textbf{Baud / type} & \textbf{Carries} \\
 \midrule
-Mission Planner $\leftrightarrow$ FC & USB or \texttt{TELEM2}        & 57600--921600    & MAVLink: params, mode, mission, monitoring \\
+Mission Planner $\leftrightarrow$ FC & USB or \texttt{TELEM2}        & 921600            & MAVLink: params, mode, mission, monitoring \\
 RadioMaster TX $\to$ RX $\to$ FC     & RC input pins                 & PPM or SBUS      & Stick channels, mode switch (LOITER/POSHOLD/GUIDED) \\
-Jetson $\leftrightarrow$ FC          & \texttt{TELEM1} UART          & 57600            & MAVLink: state, setpoints, arming, missions \\
+Jetson $\leftrightarrow$ FC          & \texttt{TELEM1} UART          & 921600           & MAVLink: state, setpoints, arming, missions \\
 Jetson $\leftrightarrow$ Operator    & WiFi (Foxglove WS \texttt{:8765}) & TCP/IP        & ROS 2 telemetry, services, status \\
 \bottomrule
 \end{tabularx}

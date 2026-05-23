@@ -143,7 +143,7 @@ $ make hw-up             # docker compose -f docker/compose.hw.yaml up
 $ # Foxglove: connect Studio to ws://localhost:8765
 ```
 
-The `companion` container talks to the FC on `serial:///dev/ttyTHS1:57600` by
+The `companion` container talks to the FC on `serial:///dev/ttyTHS1:921600` by
 default. Change `FCU_URL` in `compose.hw.yaml` if your wiring differs.
 
 ### 3. Verify the link
@@ -157,7 +157,7 @@ and pose streams are alive. The standalone pymavlink probe is also useful when
 MAVROS itself is what you suspect:
 
 ```sh
-$ python3 scripts/hardware/fc_link_test.py --port /dev/ttyTHS1 --baud 57600
+$ python3 scripts/hardware/fc_link_test.py --port /dev/ttyTHS1 --baud 921600
 ```
 
 ### 4. Tear down

@@ -14,7 +14,7 @@
 #
 # Overridable env (export before `up`, or use an .env file):
 #   FC_DEVICE  host serial device                  (default /dev/ttyTHS1)
-#   FCU_URL    MAVROS endpoint, serial:///dev:baud  (default 57600 baud)
+#   FCU_URL    MAVROS endpoint, serial:///dev:baud  (default 921600 baud)
 name: orynth-hw
 
 services:
@@ -36,9 +36,9 @@ services:
     environment:
       - ROS_DOMAIN_ID=42
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-      # MAVROS serial endpoint. ArduPilot TELEM ports default to 57600 baud;
+      # MAVROS serial endpoint. ArduPilot TELEM ports default to 57600 baud; raise to 921600.
       # override FCU_URL if you raised SERIALx_BAUD on the FC.
-      - FCU_URL=${FCU_URL:-serial:///dev/ttyTHS1:57600}
+      - FCU_URL=${FCU_URL:-serial:///dev/ttyTHS1:921600}
       - FOXGLOVE_PORT=8765
     # sitl_companion.sh is backend-agnostic — it builds the overlay and
     # launches sitl_single.launch.py with whatever FCU_URL it is handed. The

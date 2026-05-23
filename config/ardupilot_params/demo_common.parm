@@ -45,7 +45,7 @@ RTL_ALT          1500     # cm  — 15 m RTL altitude
 # unconditionally. These assume the Jetson is wired to TELEM1 = SERIAL1 — set
 # the matching SERIALn_* / SRn_* if you used another port (see README.md).
 SERIAL1_PROTOCOL 2        # MAVLink2 on TELEM1
-SERIAL1_BAUD     57       # 57600 baud  (use 921 for 921600)
+SERIAL1_BAUD     921      # 921600 baud  (use 57 for 57600)
 SR1_EXT_STAT     10
 SR1_POSITION     10
 SR1_EXTRA1       10

@@ -35,7 +35,7 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("--port", default="/dev/ttyTHS1")
-    p.add_argument("--baud", type=int, default=57600)
+    p.add_argument("--baud", type=int, default=921600)
     p.add_argument(
         "--motor",
         type=int,

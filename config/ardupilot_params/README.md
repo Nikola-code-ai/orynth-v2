@@ -36,7 +36,7 @@ pick `demo_common.parm`, repeat for `drone_<N>.parm`, then **reboot the FC**.
 **MAVProxy / pymavlink** (over the same serial link `fc_link_test.py` uses):
 
 ```sh
-mavproxy.py --master=/dev/ttyTHS1 --baudrate=57600
+mavproxy.py --master=/dev/ttyTHS1 --baudrate=921600
 param load config/ardupilot_params/demo_common.parm
 param load config/ardupilot_params/drone_0.parm     # match the airframe
 param fetch                                          # verify
@@ -63,5 +63,5 @@ These are a **starting point**. Review at least:
   (`docs/runbooks/first_flight.md`).
 
 Verify the link and identity afterwards with
-`python3 scripts/hardware/fc_link_test.py --port /dev/ttyTHS1 --baud 57600` —
+`python3 scripts/hardware/fc_link_test.py --port /dev/ttyTHS1 --baud 921600` —
 it prints the system id the FC reports.

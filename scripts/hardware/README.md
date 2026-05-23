@@ -74,10 +74,10 @@ pip install pymavlink
 ## Step 5 — Connection test (props may stay on — nothing moves)
 
 ```sh
-python3 fc_link_test.py --port /dev/ttyTHS1 --baud 57600
+python3 fc_link_test.py --port /dev/ttyTHS1 --baud 921600
 ```
 
-`--baud 57600` is the ArduPilot TELEM default (`SERIALx_BAUD`). If you raised
+`--baud 921600` is the ArduPilot TELEM default (`SERIALx_BAUD`). If you raised
 that on the FC (e.g. 921600), pass the matching value. A healthy run prints a
 heartbeat, then a battery / GPS / attitude snapshot.
 
@@ -156,7 +156,7 @@ make base          # builds orynth-base:dev for this board's architecture
 ## Step D — Bring MAVROS up against the FC
 
 ```sh
-make hw-up                                  # /dev/ttyTHS1 @ 57600 baud
+make hw-up                                  # /dev/ttyTHS1 @ 921600 baud
 # non-default device or baud:
 FC_DEVICE=/dev/ttyUSB0 FCU_URL=serial:///dev/ttyTHS1:921600 make hw-up
 ```
