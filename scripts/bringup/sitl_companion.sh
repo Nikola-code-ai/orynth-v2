@@ -12,12 +12,15 @@ set -euo pipefail
 FCU_URL="${FCU_URL:-tcp://127.0.0.1:5760@}"
 FOXGLOVE_PORT="${FOXGLOVE_PORT:-8765}"
 
-echo "==> Building swarm_control + swarm_bringup overlay -> /opt/overlay"
+echo "==> Building swarm_bringup overlay (incl. swarm_msgs + swarm_control deps) -> /opt/overlay"
 cd /workspace/ros2_ws
 # --log-base is a global colcon option (before the verb); --build-base /
 # --install-base are `build` verb options (after it).
+# --packages-up-to pulls in the full dep closure (swarm_msgs IDL, swarm_control)
+# rather than just the two named packages — without it, swarm_control fails
+# because swarm_msgs has not been built yet.
 colcon --log-base /tmp/overlay_log build \
-  --packages-select swarm_control swarm_bringup \
+  --packages-up-to swarm_bringup \
   --build-base /tmp/overlay_build \
   --install-base /opt/overlay
 
