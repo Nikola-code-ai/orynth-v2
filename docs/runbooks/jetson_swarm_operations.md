@@ -30,6 +30,12 @@ controller** over serial. The Jetsons share a WiFi LAN and one ROS 2 graph
    Operator laptop: Mission Planner / QGC (MAVLink safety) + Foxglove (ROS view)
 ```
 
+**Hardware Prerequisites for the Swarm:**
+- **WiFi Access Point:** The Jetsons do not form an ad-hoc mesh. You must have a dedicated outdoor-rated WiFi Access Point (e.g., Ubiquiti Bullet) configured with static IPs (e.g., `192.168.42.x`) that all Jetsons connect to.
+- **Power Supply:** The Orin Nanos draw up to 25W under load (YOLO + LIO + max perf). Do **not** power them from the ArduPilot power module. Use a dedicated high-quality 5V/5A+ BEC per Jetson directly wired to the battery.
+- **Storage:** Boot from an NVMe SSD, not a microSD card. MicroSD cards will fail quickly under `rosbag2` logging and Docker layer filesystem writes.
+- **Time Sync:** Swarm formation tracking relies heavily on synchronized clocks. You must configure `Chrony` (NTP) or `PTP` across the WiFi LAN so the Jetsons are within 10ms of each other. A drifting clock will cause TF lookup failures and false-positive leader-pose watchdog triggers.
+
 - **Every Jetson** runs one namespaced MAVROS instance against its FC.
 - **The leader's Jetson (drone_0)** additionally runs the Foxglove bridge and
   `swarm_server` — the orchestrator that drives all five drones. It is the
@@ -90,7 +96,7 @@ instructions and the values to review for your hardware:
 Verify per drone:
 
 ```sh
-python3 scripts/hardware/fc_link_test.py --port /dev/ttyTHS1 --baud 57600
+python3 scripts/hardware/fc_link_test.py --port /dev/ttyTHS1 --baud 921600
 ```
 
 ### 2.5 Assign a static IP and the DDS peer list
@@ -381,7 +387,7 @@ Power the flight controllers down only after the companions have stopped.
 | Bring up this Jetson's drone | `make demo-up DRONE_ID=<0-4>` |
 | Swarm preflight gate (leader Jetson) | `make demo-check` |
 | Tear down this Jetson | `make demo-down DRONE_ID=<0-4>` |
-| Bench link test (no ROS) | `python3 scripts/hardware/fc_link_test.py --port /dev/ttyTHS1 --baud 57600` |
+| Bench link test (no ROS) | `python3 scripts/hardware/fc_link_test.py --port /dev/ttyTHS1 --baud 921600` |
 | Props-off motor test | `python3 scripts/hardware/motor_test.py --port /dev/ttyTHS1 --motor 1 --throttle 8` |
 | Rehearse leader-follow in SITL | `make leaderfollow-smoke` |
 | Leader-follow in Gazebo (on screen) | `make swarm-up` |
