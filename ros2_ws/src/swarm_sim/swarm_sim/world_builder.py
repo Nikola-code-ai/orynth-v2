@@ -40,7 +40,7 @@ _DIAMOND_UNIT = (
     (0.0, +1.0),  # 1 left wing — north
     (0.0, -1.0),  # 2 right wing — south
     (-1.0, 0.0),  # 3 tail — west
-    (0.0, 0.0),   # 4 centre
+    (0.0, 0.0),  # 4 centre
 )
 
 

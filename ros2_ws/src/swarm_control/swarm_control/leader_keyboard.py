@@ -43,12 +43,18 @@ class Step:
 
 
 KEYS: dict[str, Step] = {
-    "w": Step(dy=2.0),   "W": Step(dy=5.0),
-    "s": Step(dy=-2.0),  "S": Step(dy=-5.0),
-    "a": Step(dx=-2.0),  "A": Step(dx=-5.0),
-    "d": Step(dx=2.0),   "D": Step(dx=5.0),
-    "r": Step(dz=1.0),   "R": Step(dz=2.0),
-    "f": Step(dz=-1.0),  "F": Step(dz=-2.0),
+    "w": Step(dy=2.0),
+    "W": Step(dy=5.0),
+    "s": Step(dy=-2.0),
+    "S": Step(dy=-5.0),
+    "a": Step(dx=-2.0),
+    "A": Step(dx=-5.0),
+    "d": Step(dx=2.0),
+    "D": Step(dx=5.0),
+    "r": Step(dz=1.0),
+    "R": Step(dz=2.0),
+    "f": Step(dz=-1.0),
+    "F": Step(dz=-2.0),
     " ": Step(),
 }
 
