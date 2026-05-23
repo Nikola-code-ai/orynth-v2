@@ -23,6 +23,7 @@ setup(
         "console_scripts": [
             "sitl_mission = swarm_control.sitl_mission:main",
             "swarm_server = swarm_control.swarm_server_node:main",
+            "leader_keyboard = swarm_control.leader_keyboard:main",
         ],
     },
 )
