@@ -258,6 +258,34 @@ The watchdog is exercised without a real dropout via
 `ros2 param set /swarm_server simulate_leader_dropout true` (then `false`).
 Foxglove `demo.json` shows the live per-follower formation error.
 
+### 3. Fly the leader with the keyboard
+
+Once the swarm is up and `/swarm/follow_leader` is engaged, drive `drone_0`
+interactively instead of issuing one `manual_goto` per move:
+
+```sh
+$ docker exec -it orynth-swarm-companion bash -lc \
+    'source /opt/overlay/setup.bash && ros2 run swarm_control leader_keyboard'
+```
+
+Each keypress nudges `drone_0` by `current_pose + step` in field-ENU:
+
+| Key       | Action                              |
+|-----------|-------------------------------------|
+| `w` / `W` | north +2 m / +5 m                   |
+| `s` / `S` | south                               |
+| `a` / `A` | west +2 m / +5 m                    |
+| `d` / `D` | east                                |
+| `r` / `R` | up +1 m / +2 m                      |
+| `f` / `F` | down                                |
+| `space`   | hold (re-send current pose)         |
+| `h`       | show keymap                         |
+| `q` / Ctrl-C | quit                             |
+
+The `make swarm-up` GUI compose sets `FORMATION_LOCK_HEADING=1`, so the diamond
+translates with the leader but never rotates around it — followers stay in their
+field-ENU slots even when ArduPilot yaws the leader toward each goto target.
+
 ---
 
 ## Phase 2.5b — Hardware leader-follow demo

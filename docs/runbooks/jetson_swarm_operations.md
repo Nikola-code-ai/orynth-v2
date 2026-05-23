@@ -273,6 +273,33 @@ Formations: `diamond`, `vee`, `column`, `line`. `swarm_server` publishes
 `/swarm/status` (phase, formation, watchdog/emergency) and `/swarm/formation_error`
 (per-drone horizontal error) — both on the `demo.json` layout.
 
+### Bench / GUIDED-leader teleop
+
+For bench dev or any scenario where the **leader is companion-controlled**
+(GUIDED, not RC-flown by a safety pilot), `leader_keyboard` is the operator's
+interactive tool — it nudges `drone_0`'s `manual_goto` target by `current_pose
++ step` on each keypress instead of asking the operator to compose a service
+call per move:
+
+```sh
+# Run on the leader's Jetson (drone_0) — needs an interactive TTY.
+ros2 run swarm_control leader_keyboard
+```
+
+Keys: `w/a/s/d` translate the leader 2 m N/W/S/E (uppercase = 5 m), `r/f`
+±1 m altitude, space = hold, `h` = help, `q` or Ctrl-C to quit. The four
+followers track via the existing `/swarm/follow_leader` loop.
+
+> **Do not use during the production demo.** In the standard Phase 2.5b
+> sequence the leader is hand-flown by a safety pilot in LOITER — RC mode
+> authority intentionally removes the leader from companion control, and
+> calling `manual_goto` on it would fight the pilot. Reserved for bench tests
+> and any future GUIDED-leader variant.
+
+To activate the formation heading-lock that prevents the diamond rotating
+around the leader as ArduPilot yaws toward goto targets, ensure
+`FORMATION_LOCK_HEADING=1` is set in `compose.demo.yaml` (it's the default).
+
 ---
 
 ## 7. The leader-follow demo, end to end

@@ -70,6 +70,15 @@ Flight director signs the gate (§ 8) before bringup.
   full spacing with margin; arming point inside it.
 - Leader flies low and slow (≤ 3 m/s) — tracking latency over WiFi is
   non-critical at low speed (`PLAN.md` § G).
+- **Heading-locked formation.** `compose.demo.yaml` sets
+  `FORMATION_LOCK_HEADING=1` (the default), so the diamond translates with the
+  leader but never rotates around it. Without this, every leader yaw would
+  rotate the four followers around the leader's new nose direction — a sharp
+  yaw (pilot input, weathervaning in wind, or ArduPilot's `WP_YAW_BEHAVIOR`
+  pointing the nose at a goto target) could swing two follower slots through
+  the leader's position. **Verify the env var is set on the leader Jetson
+  before takeoff** — `docker compose config | grep FORMATION_LOCK_HEADING`
+  from the demo directory should print `FORMATION_LOCK_HEADING: "1"`.
 
 ---
 
