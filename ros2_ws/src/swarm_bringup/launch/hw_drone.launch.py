@@ -41,6 +41,15 @@ def generate_launch_description() -> LaunchDescription:
     # Real airframes fly in one shared sky — no per-slot altitude stagger; the
     # formation is flat and physical spacing keeps the drones apart.
     alt_step = float(os.environ.get("FORMATION_ALT_STEP", "0.0"))
+    # Lock the formation's heading to engage-time so the diamond translates
+    # with the leader but never rotates around it. Stops followers swinging
+    # through the leader when ArduPilot's WP_YAW_BEHAVIOR points the leader's
+    # nose at each new goto target.
+    lock_heading = os.environ.get("FORMATION_LOCK_HEADING", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
     apm_launch = PathJoinSubstitution(
         [FindPackageShare("mavros"), "launch", "apm.launch"]
@@ -92,6 +101,7 @@ def generate_launch_description() -> LaunchDescription:
                         "mavros_ns_prefix": "drone_",
                         "formation_alt_step_m": alt_step,
                         "leader_pose_timeout_s": leader_timeout,
+                        "formation_lock_heading": lock_heading,
                     }
                 ],
             )

@@ -37,6 +37,11 @@ def generate_launch_description() -> LaunchDescription:
     foxglove_port = os.environ.get("FOXGLOVE_PORT", "8765")
     alt_step = float(os.environ.get("FORMATION_ALT_STEP", "0.0"))
     leader_timeout = float(os.environ.get("LEADER_POSE_TIMEOUT", "1.5"))
+    lock_heading = os.environ.get("FORMATION_LOCK_HEADING", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
     apm_launch = PathJoinSubstitution(
         [FindPackageShare("mavros"), "launch", "apm.launch"]
@@ -88,6 +93,7 @@ def generate_launch_description() -> LaunchDescription:
                 "mavros_ns_prefix": "drone_",
                 "formation_alt_step_m": alt_step,
                 "leader_pose_timeout_s": leader_timeout,
+                "formation_lock_heading": lock_heading,
             }
         ],
     )

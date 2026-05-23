@@ -25,7 +25,13 @@ services:
       - /dev/dri:/dev/dri
 
   companion:
-    # Shared 3D world -> deconflict the formation by altitude so drones never
-    # cross through one another (pure-SITL needs none; it has no shared world).
+    # Flat formation in the shared 3D world: every follower flies at the
+    # leader's altitude. Safe for the stable diamond (slots never cross each
+    # other); raise this back to ~2.0 if the leader will yaw the formation
+    # hard enough to swap slot positions.
     environment:
-      - FORMATION_ALT_STEP=2.0
+      - FORMATION_ALT_STEP=0.0
+      # Formation translates with the leader but never rotates around it.
+      # Stops followers from swinging through the leader when ArduPilot yaws
+      # the leader's nose toward each new goto target.
+      - FORMATION_LOCK_HEADING=1

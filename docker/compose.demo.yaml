@@ -53,6 +53,11 @@ services:
       - FOXGLOVE_PORT=8765
       - LEADER_POSE_TIMEOUT=${LEADER_POSE_TIMEOUT:-1.5}
       - FORMATION_ALT_STEP=0.0
+      # Heading-lock the formation: it translates with the leader but never
+      # rotates around it. Hardware-critical — ArduPilot's WP_YAW_BEHAVIOR
+      # yaws the leader's nose toward each goto target, which would otherwise
+      # swing followers through the leader on every direction change.
+      - FORMATION_LOCK_HEADING=${FORMATION_LOCK_HEADING:-1}
     command: ["bash", "/workspace/scripts/bringup/demo_companion.sh"]
     healthcheck:
       # Healthy once this drone's MAVROS reports a live link to its FC.

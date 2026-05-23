@@ -84,6 +84,12 @@ class SwarmServer(Node):
         # leader's pose after the last update before the watchdog declares it
         # stale and freezes the formation on the last good leader reference.
         self.declare_parameter("leader_pose_timeout_s", 1.5)
+        # When true, the formation translates with the leader but never
+        # rotates around it — the leader's heading at engage time is captured
+        # and reused for every follow_leader tick. Stops followers from
+        # swinging through the leader when ArduPilot's WP_YAW_BEHAVIOR points
+        # the leader's nose at each goto target.
+        self.declare_parameter("formation_lock_heading", False)
         # Test / demo hook — force the leader-pose watchdog regardless of the
         # real pose age. Settable at runtime (`ros2 param set`) so the SITL
         # acceptance gate exercises the watchdog without a real RF dropout.
@@ -97,6 +103,7 @@ class SwarmServer(Node):
         status_hz = float(self.get_parameter("status_rate_hz").value)
         self._alt_step = float(self.get_parameter("formation_alt_step_m").value)
         self._leader_timeout = float(self.get_parameter("leader_pose_timeout_s").value)
+        self._lock_heading = bool(self.get_parameter("formation_lock_heading").value)
 
         # Per-drone field-frame spawn offsets, flat [x0,y0,x1,y1,...].
         self.declare_parameter("field_offsets", [0.0] * (2 * self._n))
@@ -413,10 +420,11 @@ class SwarmServer(Node):
         stale = simulate or live is None or leader.pose_age_s > self._leader_timeout
 
         if not stale:
-            heading = leader.heading_rad
             with self._lock:
                 self._formation_ref = live
-                self._leader_heading = heading
+                if not self._lock_heading:
+                    self._leader_heading = leader.heading_rad
+                heading = self._leader_heading
                 recovered = self._leader_stale
                 self._leader_stale = False
             if recovered:
