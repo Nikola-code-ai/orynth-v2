@@ -51,7 +51,7 @@ services:
     environment:
       # Per-drone DDS domain — no longer shared. Defence in depth on top of
       # cyclonedds_local_only.xml binding to `lo`.
-      - ROS_DOMAIN_ID=$((100 + ${DRONE_ID:-0}))
+      - ROS_DOMAIN_ID=100
       - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - CYCLONEDDS_URI=file:///workspace/config/networks/cyclonedds_local_only.xml
       - DRONE_ID=${DRONE_ID:-0}
