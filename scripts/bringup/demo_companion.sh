@@ -19,7 +19,7 @@ cd /workspace/ros2_ws
 # (swarm_msgs IDL, swarm_control, swarm_sim, swarm_perception) — swarm_server
 # needs swarm_msgs + swarm_control built, even on follower Jetsons.
 colcon --log-base /tmp/overlay_log build \
-  --packages-up-to swarm_bringup \
+  --packages-up-to swarm_bringup swarm_radio \
   --build-base /tmp/overlay_build \
   --install-base /opt/overlay
 
